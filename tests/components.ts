@@ -130,6 +130,11 @@ export class TestRenderer extends Renderer {
         }
     }
 
+    expectCursorAt (column: number, row: number) {
+        expect(this.cursorColumn).equals(column);
+        expect(this.cursorRow).equals(row);
+    }
+
     expectLine (column: number, row: number, data: string | Array<UnicodeChar | null>) {
         this.assertIndexInRange(column, row);
         this.assertIndexInRange(column + data.length - 1, row);

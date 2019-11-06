@@ -1,5 +1,5 @@
-import { Pair, assert } from "./utils";
-import { Renderer, Color, Block } from "./renderer";
+import { assert } from "./utils";
+import { Renderer, Block } from "./renderer";
 
 export class Font {
     private family: string;

@@ -1,5 +1,4 @@
-import { describe, it, Test } from "mocha";
-import { expect } from "chai";
+import { describe, it } from "mocha";
 
 import { Input } from "../src/yterm/input";
 import { Terminal } from "../src/yterm/terminal";
@@ -35,5 +34,40 @@ describe("Terminal", () => {
         input.input("4");
         renderer.expectLine(0, 0, "34");
         renderer.expectLine(0, 1, [ null, null ]);
+    });
+
+    itWithTerminal("handles backspace", 5, 1, (source, renderer, input, term) => {
+        input.input("1234");
+
+        renderer.expectCursorAt(4, 0);
+        input.input("\x08");
+        renderer.expectCursorAt(3, 0);
+        input.input("\x08\x08");
+        renderer.expectCursorAt(1, 0);
+    });
+
+    itWithTerminal("moves cursor correctly", 5, 5, (source, renderer, input, term) => {
+        renderer.expectCursorAt(0, 0);
+
+        input.input("\x1b[A");
+        renderer.expectCursorAt(0, 0);
+
+        input.input("\x1b[B");
+        renderer.expectCursorAt(0, 1);
+
+        input.input("\x1b[C");
+        renderer.expectCursorAt(1, 1);
+
+        input.input("\x1b[D");
+        renderer.expectCursorAt(0, 1);
+
+        input.input("\x1b[3B");
+        renderer.expectCursorAt(0, 4);
+
+        input.input("\x1b[4C");
+        renderer.expectCursorAt(4, 4);
+
+        input.input("\x1b[4A");
+        renderer.expectCursorAt(4, 0);
     });
 });
