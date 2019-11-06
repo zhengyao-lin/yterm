@@ -1,0 +1,54 @@
+\documentclass[11pt]{article}
+
+\usepackage[letterpaper, margin=0.9in]{geometry}
+\usepackage{hyperref}
+\usepackage{amsmath, amsfonts, amssymb}
+
+\begin{document}
+    \title{CS 242 Project Proposal}
+    \author{Zhengyao Lin}
+    \date{October, 2019}
+    \maketitle
+    
+    \section{Abstract}
+        $\mathtt{yterm}$ is a web-based terminal emulator. It runs in browser and uses HTML Canvas API for basic graphics. I'm currently aiming to support most of ANSI escape sequences by the end of the three weeks.
+    
+    \section{Technical Specifications}
+        \begin{itemize}
+            \item Platform: Web
+            \item Programming language: TypeScript
+            \item Stylistic conventions: \href{https://standardjs.com}{Standard JS}
+            \item IDE: Visual Studio Code
+            \item Tools: Google Chrome
+            \item Target audience: My moderator, group mates, and me
+        \end{itemize}
+    
+    \section{Functional Specifications}
+        \texttt{yterm} will support basic rendering of the terminal with a customizable and extensible framework. It will also support most of the ANSI escape sequences, which will bring colors and other fun things onto the stage.
+        
+    \section{Timeline}
+        \begin{enumerate}
+            \item[W1]
+                \begin{itemize}
+                    \item Basic framework
+                    \item Supports basic terminal functionalities without ANSI escape codes
+                \end{itemize}
+            
+            \item[W2]
+                \begin{itemize}
+                    \item Add support for ANSI sequences for coloring
+                    \item Add support for different styles/fonts
+                    \item Full support for UTF-8.
+                \end{itemize}
+            
+            \item[W3]
+                \begin{itemize}
+                    \item Add support for other ANSI sequences
+                    \item Optimize for performance.
+                    \item Support for emojis.
+                \end{itemize}
+        \end{enumerate}
+    
+    \section{Future Enhancements}
+        I'm relatively new to linux TTY and PTY. The large number of existing protocols/standards for terminals will definitely take a long time to learn. One obvious direction for enhancements would be to support more extensions.
+\end{document}
