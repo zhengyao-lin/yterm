@@ -1,0 +1,39 @@
+\documentclass[11pt]{article}
+
+\usepackage[letterpaper, margin=0.9in]{geometry}
+\usepackage{hyperref}
+\usepackage{amsmath, amsfonts, amssymb}
+
+\begin{document}
+    \title{CS 242 Week 2 Rubrics}
+    \author{Zhengyao Lin}
+    \date{November, 2019}
+    \maketitle
+    
+    \section{Abstract}
+        In week 2, \texttt{yterm} will support more ANSI sequences. In particular, I'll add support for colors and other graphic-related ANSI sequences (Select Graphic Rendition or SGR). I'll further optimize the code structure and add more thorough tests for ANSI sequences.
+    
+    \section{Rubrics}
+        \begin{itemize}
+            \item (40\%) Select Graphic Rendition/SGR escape sequences. This includes
+            \begin{itemize}
+                \item (10\%) Switching font weight (faint/normal/bold)
+                \item (10\%) Switching font style (italic/underline/blinking)
+                \item (10\%) Switching foreground color
+                \item (10\%) Switching background color
+            \end{itemize}
+        
+            \item (40\%) Support and optimize for more command line programs
+            \begin{itemize}
+                \item (20\%) \texttt{cmatrix}
+                \item (20\%) \texttt{npm}
+                \item (5\%) \texttt{vi} (extra-credit)
+            \end{itemize}
+        
+            \item (20\%) More tests on ANSI sequences
+            \begin{itemize}
+                \item (10\%) Standardize the implementation of ANSI sequences
+                \item (10\%) More tests for the Terminal class
+            \end{itemize}
+        \end{itemize}
+\end{document}
