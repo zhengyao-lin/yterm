@@ -1,36 +1,146 @@
 import { assert } from "./utils";
 import { UnicodeChar, unicodeLength } from "./unicode";
 
-export type Color = string;
+// select graphic rendition code
+// https://en.wikipedia.org/wiki/ANSI_escape_code#SGR_parameters
+export enum SGRAttribute {
+    SGR_RESET = 0,
+
+    SGR_HIGH_INTENSITY = 1, // bold
+    SGR_LOW_INTENSITY = 2, // faint
+    SGR_NORMAL_INTENSITY = 22,
+    
+    SGR_ITALIC_STYLE = 3,
+    SGR_FRAKTUR_STYLE = 20,
+    SGR_NORMAL_STYLE = 23,
+
+    SGR_UNDERLINE_ON = 4,
+    SGR_DOUBLY_UNDERLINE = 21,
+    SGR_UNDERLINE_OFF = 24,
+
+    SGR_SLOW_BLINK = 5,
+    SGR_RAPID_BLINK = 6,
+    SGR_BLINK_OFF = 25,
+
+    SGR_REVERSE = 7,
+    SGR_REVERSE_OFF = 27,
+
+    SGR_CONCEAL = 8,
+    SGR_REVEAL = 28,
+
+    SGR_CROSSED_OUT = 9,
+    SGR_NOT_CROSSED_OUT = 29,
+    
+    SGR_DEFAULT_FONT = 10,
+    SGR_ALTERNATIVE_FONT_1 = 11,
+    SGR_ALTERNATIVE_FONT_2 = 12,
+    SGR_ALTERNATIVE_FONT_3 = 13,
+    SGR_ALTERNATIVE_FONT_4 = 14,
+    SGR_ALTERNATIVE_FONT_5 = 15,
+    SGR_ALTERNATIVE_FONT_6 = 16,
+    SGR_ALTERNATIVE_FONT_7 = 17,
+    SGR_ALTERNATIVE_FONT_8 = 18,
+    SGR_ALTERNATIVE_FONT_9 = 19,
+
+    SGR_FOREGROUND_BLACK = 30,
+    SGR_FOREGROUND_RED = 31,
+    SGR_FOREGROUND_GREEN = 32,
+    SGR_FOREGROUND_YELLOW = 33,
+    SGR_FOREGROUND_BLUE = 34,
+    SGR_FOREGROUND_MAGENTA = 35,
+    SGR_FOREGROUND_CYAN = 36,
+    SGR_FOREGROUND_WHITE = 37,
+    SGR_FOREGROUND_CUSTOM = 38,
+    SGR_FOREGROUND_DEFAULT = 39,
+
+    SGR_BACKGROUND_BLACK = 40,
+    SGR_BACKGROUND_RED = 41,
+    SGR_BACKGROUND_GREEN = 42,
+    SGR_BACKGROUND_YELLOW = 43,
+    SGR_BACKGROUND_BLUE = 44,
+    SGR_BACKGROUND_MAGENTA = 45,
+    SGR_BACKGROUND_CYAN = 46,
+    SGR_BACKGROUND_WHITE = 47,
+    SGR_BACKGROUND_CUSTOM = 48,
+    SGR_BACKGROUND_DEFAULT = 49
+}
+
+export type Color = SGRColor | string;
+
+export enum SGRColor {
+    SGR_COLOR_BLACK,
+    SGR_COLOR_RED,
+    SGR_COLOR_GREEN,
+    SGR_COLOR_YELLOW,
+    SGR_COLOR_BLUE,
+    SGR_COLOR_MAGENTA,
+    SGR_COLOR_CYAN,
+    SGR_COLOR_WHITE,
+    SGR_COLOR_DEFAULT
+}
+
+export enum Intensity {
+    SGR_INTENSITY_NORMAL,
+    SGR_INTENSITY_HIGH,
+    SGR_INTENSITY_LOW
+}
+
+export enum BlinkStatus {
+    BLINK_NONE,
+    BLINK_SLOW,
+    BLINK_FAST
+}
+
+export enum TextStyle {
+    STYLE_NORMAL,
+    STYLE_ITALIC
+}
 
 // block represents a single character block on the terminal
 // containing all style related data
 export class Block {
-    private background: Color;
-    private foreground: Color;
     private char: UnicodeChar | null;
     
-    constructor (background: Color, foreground: Color, char: UnicodeChar | null) {
-        assert(char == null || unicodeLength(char) == 1, `${char} is not a single character`);
+    public background: Color;
+    public foreground: Color;
+    public intensity: Intensity;
+    public blink: BlinkStatus;
+    public inversed: boolean;
+    public style: TextStyle;
+
+    constructor (char = null,
+                 background = SGRColor.SGR_COLOR_DEFAULT,
+                 foreground = SGRColor.SGR_COLOR_DEFAULT) {
+        assert(char == null || unicodeLength(char!) == 1, `${char} is not a single character`);
+
+        this.char = char;
 
         this.background = background;
         this.foreground = foreground;
-        this.char = char;
+
+        this.intensity = Intensity.SGR_INTENSITY_NORMAL;
+        this.blink = BlinkStatus.BLINK_NONE;
+        this.inversed = false;
+        this.style = TextStyle.STYLE_NORMAL;
     }
 
-    getBackground () { return this.background; }
-    getForeground () { return this.foreground; }
+    copy (): Block {
+        return Object.create(this);
+    }
+
     getChar () { return this.char; }
 
     withChar (char: UnicodeChar | null) {
-        return new Block(this.background, this.foreground, char);
+        const copy = this.copy();
+        copy.char = char;
+        return copy;
     }
 }
 
 export abstract class Renderer {
     private defaultBlock: Block; // default block is equivalent to a null block
 
-    constructor (defaultBlock = new Block("#000", "#fff", null)) {
+    constructor (defaultBlock = new Block()) {
         this.defaultBlock = defaultBlock;
     }
 
@@ -45,6 +155,15 @@ export abstract class Renderer {
 
     abstract setCursor (column: number, row: number): void;
     abstract getCursor (): { column: number, row: number };
+
+    // optional
+    showCursor () {}
+    hideCursor () {}
+    enableCursorBlink () {}
+    disableCursorBlink () {}
+
+    useAlternativeScreen () {}
+    useMainScreen () {}
 
     setDefaultBlock (block: Block) {
         this.defaultBlock = block;
@@ -72,29 +191,162 @@ export abstract class Renderer {
     }
 
     // overwriting scrollDown may be more efficient
-    scrollDown (n: number): void {
-        assert(n >= 0, "scrolling down by a negative number");
-
-        const { columns, rows } = this.getGridSize();
-
+    // positive number to scroll down
+    // negative to scroll up
+    scroll (n: number) {
         if (n == 0) {
             return;
+        }
+
+        const { columns, rows } = this.getGridSize();
+        let scrollUp = false;
+
+        if (n < 0) {
+            n = -n;
+            scrollUp = true;
         }
 
         if (n > rows) {
             n = rows;
         }
 
-        for (let i = 0; i < rows; i++) {
-            for (let j = 0; j < columns; j++) {
-                if (i < rows - n) {
-                    // move first (rows - n) rows up by n
-                    this.setBlock(this.getBlock(j, i + n), j, i);
-                } else {
-                    // clear the rest
-                    this.setBlock(null, j, i);
+        if (scrollUp) {
+            for (let i = rows - 1; i >= 0; i--) {
+                for (let j = 0; j < columns; j++) {
+                    if (i < n) {
+                        // clear the first n rows
+                        this.setBlock(null, j, i);
+                    } else {
+                        // move first n rows down by n
+                        this.setBlock(this.getBlock(j, i - n), j, i);
+                    }
+                }
+            }
+        } else {
+            for (let i = 0; i < rows; i++) {
+                for (let j = 0; j < columns; j++) {
+                    if (i < rows - n) {
+                        // move first (rows - n) rows up by n
+                        this.setBlock(this.getBlock(j, i + n), j, i);
+                    } else {
+                        // clear the rest
+                        this.setBlock(null, j, i);
+                    }
                 }
             }
         }
     }
+}
+
+export function applySGRAttribute (attrs: Array<SGRAttribute>, block: Block): Block {
+    let final = block.copy();
+
+    for (const attr of attrs) {
+        switch (attr) {
+            case SGRAttribute.SGR_RESET:
+                final = new Block(); // reset the block
+                break;
+
+            // intensity
+            case SGRAttribute.SGR_HIGH_INTENSITY:
+                final.intensity = Intensity.SGR_INTENSITY_HIGH;
+                break;
+
+            case SGRAttribute.SGR_LOW_INTENSITY:
+                final.intensity = Intensity.SGR_INTENSITY_LOW;
+                break;
+
+            case SGRAttribute.SGR_NORMAL_INTENSITY:
+                final.intensity = Intensity.SGR_INTENSITY_NORMAL;
+                break;
+
+            // style
+            case SGRAttribute.SGR_ITALIC_STYLE:
+                final.style = TextStyle.STYLE_ITALIC;
+                break;
+
+            case SGRAttribute.SGR_NORMAL_STYLE:
+                final.style = TextStyle.STYLE_NORMAL;
+                break;
+
+            // foreground colors
+            case SGRAttribute.SGR_FOREGROUND_BLACK:
+                final.foreground = SGRColor.SGR_COLOR_BLACK;
+                break;
+
+            case SGRAttribute.SGR_FOREGROUND_RED:
+                final.foreground = SGRColor.SGR_COLOR_RED;
+                break;
+
+            case SGRAttribute.SGR_FOREGROUND_GREEN:
+                final.foreground = SGRColor.SGR_COLOR_GREEN;
+                break;
+
+            case SGRAttribute.SGR_FOREGROUND_YELLOW:
+                final.foreground = SGRColor.SGR_COLOR_YELLOW;
+                break;
+
+            case SGRAttribute.SGR_FOREGROUND_BLUE:
+                final.foreground = SGRColor.SGR_COLOR_BLUE;
+                break;
+                
+            case SGRAttribute.SGR_FOREGROUND_MAGENTA:
+                final.foreground = SGRColor.SGR_COLOR_MAGENTA;
+                break;
+                    
+            case SGRAttribute.SGR_FOREGROUND_CYAN:
+                final.foreground = SGRColor.SGR_COLOR_CYAN;
+                break;
+                    
+            case SGRAttribute.SGR_FOREGROUND_WHITE:
+                final.foreground = SGRColor.SGR_COLOR_WHITE;
+                break;
+                
+            case SGRAttribute.SGR_FOREGROUND_DEFAULT:
+                final.foreground = SGRColor.SGR_COLOR_DEFAULT;
+                break;
+                
+            // background colors
+            case SGRAttribute.SGR_BACKGROUND_BLACK:
+                final.foreground = SGRColor.SGR_COLOR_BLACK;
+                break;
+                
+            case SGRAttribute.SGR_BACKGROUND_RED:
+                final.foreground = SGRColor.SGR_COLOR_RED;
+                break;
+                
+            case SGRAttribute.SGR_BACKGROUND_GREEN:
+                final.foreground = SGRColor.SGR_COLOR_GREEN;
+                break;
+                
+            case SGRAttribute.SGR_BACKGROUND_YELLOW:
+                final.foreground = SGRColor.SGR_COLOR_YELLOW;
+                break;
+                
+            case SGRAttribute.SGR_BACKGROUND_BLUE:
+                final.foreground = SGRColor.SGR_COLOR_BLUE;
+                break;
+                
+            case SGRAttribute.SGR_BACKGROUND_MAGENTA:
+                final.foreground = SGRColor.SGR_COLOR_MAGENTA;
+                break;
+                
+            case SGRAttribute.SGR_BACKGROUND_CYAN:
+                final.foreground = SGRColor.SGR_COLOR_CYAN;
+                break;
+                
+            case SGRAttribute.SGR_BACKGROUND_WHITE:
+                final.foreground = SGRColor.SGR_COLOR_WHITE;
+                break;
+                
+            case SGRAttribute.SGR_BACKGROUND_DEFAULT:
+                final.foreground = SGRColor.SGR_COLOR_DEFAULT;
+                break;
+
+            default:
+                console.log(`SGR attribute ${attr} ignored`);
+        }
+    }
+
+    return final;
 }

@@ -13,3 +13,17 @@ export class Pair<A, B> {
         this.snd = snd;
     }
 }
+
+// return a regex representing the union of two languages
+export function regexUnion(...rs: Array<RegExp>) {
+    if (rs.length == 0) {
+        return /$.^/; // a regex that matches nothing ()
+    }
+
+    // otherwise concatenating all patterns with union
+    return new RegExp(rs.map(r => `(${r.source})`).join("|"));
+}
+
+export function regexMatchStart(r: RegExp) {
+    return new RegExp("^" + r.source);
+}
