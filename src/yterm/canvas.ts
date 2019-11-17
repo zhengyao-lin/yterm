@@ -1,7 +1,10 @@
 import { assert } from "./utils";
-import { Renderer, Block, Color, Intensity, TextStyle } from "./renderer";
+import { Renderer, Block, Intensity, TextStyle } from "./renderer";
 import { ColorScheme, TangoColorScheme } from "./schemes";
 
+/**
+ * Abstraction for font
+ */
 export class Font {
     private family: string;
     private size: number;
@@ -14,20 +17,27 @@ export class Font {
     getFamily () { return this.family; }
     getSize () { return this.size; }
 
+    /**
+     * Format a font string usable in convas context
+     * @param {string} style can be italic or normal
+     * @param {string} weight can be bold, lighter, or normal
+     */
     getContextFont (style = "normal", weight = "normal"): string {
         return `${style} ${weight} ${this.getSize()}px ${this.getFamily()}`;
     }
 }
 
+/**
+ * An implementation of Renderer on HTML canvas
+ * @extends Renderer
+ */
 export class CanvasRenderer extends Renderer {
+    /** Default settings and constants */
     static BLOCK_SPILL = 0;
     static DEFAULT_CURSOR_INTERVAL = 700;
-
     static DEFAULT_COLUMNS = 80;
     static DEFAULT_ROWS = 24;
-
     static DEFAULT_SCHEME = new TangoColorScheme();
-
     static DEFAULT_FONT = new Font("Ubuntu Mono", 16);
 
     private textLayer: HTMLCanvasElement;
@@ -35,12 +45,12 @@ export class CanvasRenderer extends Renderer {
 
     private font!: Font;
     private columns!: number;
-    private rows!: number; // in number of grids
+    private rows!: number;
     private width!: number;
     private height!: number;
     private fontWidth!: number;
     private fontHeight!: number;
-    private fontDescent!: number; // distance from the baseline
+    private fontDescent!: number;
 
     private screen!: Array<Array<Block | null>>;
     private mainScreen: Array<Array<Block | null>> | null;
@@ -85,10 +95,16 @@ export class CanvasRenderer extends Renderer {
         this.showCursor();
     }
 
+    /**
+     * Set the grid size of the terminal
+     */
     setGridSize (columns: number, rows: number) {
         this.setLayout(this.font, columns, rows);
     }
 
+    /**
+     * Get the current grid size
+     */
     getGridSize (): { columns: number, rows: number } {
         return {
             columns: this.columns,
@@ -96,17 +112,27 @@ export class CanvasRenderer extends Renderer {
         }
     }
 
+    /**
+     * Set a particular block
+     * @param block can be null
+     */
     setBlock (block: Block | null, column: number, row: number) {
         this.assertIndexInRange(column, row);
         this.screen[row][column] = block;
         this.renderChar(column, row);
     }
 
+    /**
+     * Reads a block
+     */
     getBlock (column: number, row: number) {
         this.assertIndexInRange(column, row);
         return this.screen[row][column];
     }
 
+    /**
+     * Set the position of the cursor
+     */
     setCursor (column: number, row: number) {
         // restore the original cursor block
         this.renderChar(this.cursorColumn, this.cursorRow);
@@ -120,6 +146,9 @@ export class CanvasRenderer extends Renderer {
         }
     }
 
+    /**
+     * Get the current position of the cursor
+     */
     getCursor (): { column: number, row: number } {
         return {
             column: this.cursorColumn,
@@ -161,6 +190,10 @@ export class CanvasRenderer extends Renderer {
         }
     }
 
+    /**
+     * Switch to an alternative screen buffer.
+     * This function will clear the alternative screen before switching.
+     */
     useAlternativeScreen () {
         if (this.mainScreen === null) {
              // save the current screen
@@ -183,6 +216,10 @@ export class CanvasRenderer extends Renderer {
         this.renderAll();
     }
 
+    /**
+     * Switch back to the original main screen.
+     * Only usable when the current screen is an alternative one.
+     */
     useMainScreen () {
         if (this.mainScreen) {
             this.screen = this.mainScreen;
@@ -199,6 +236,9 @@ export class CanvasRenderer extends Renderer {
         } // else already in the main screen
     }
 
+    /**
+     * Adjust the display according to the grid size and font
+     */
     private setLayout (font: Font, columns: number, rows: number) {
         assert(columns > 0 && rows > 0, "grid too small");
 
@@ -244,7 +284,9 @@ export class CanvasRenderer extends Renderer {
         this.renderAll();
     }
 
-    // set font and measure the dimension of the current font
+    /**
+     * Set font and measure the dimension of the current font
+     */
     private setFont (font: Font) {
         this.textContext.save();
         this.textContext.font = font.getContextFont();
@@ -263,7 +305,7 @@ export class CanvasRenderer extends Renderer {
             this.getDefaultBlock();
 
         const inverseBlock = block.copy();
-        inverseBlock.inversed = true;
+        inverseBlock.reversed = true;
 
         if (on) {
             this.renderBlock(inverseBlock, this.cursorColumn, this.cursorRow);
@@ -272,8 +314,9 @@ export class CanvasRenderer extends Renderer {
         }
     }
 
-    // render functions
-
+    /**
+     * Render a single block at the given position (column, row)
+     */
     private renderBlock (block: Block, column: number, row: number) {
         this.assertIndexInRange(column, row);
         
@@ -301,8 +344,8 @@ export class CanvasRenderer extends Renderer {
             foreground = this.colorScheme.getSGRForeground(block.foreground);
         }
 
-        // switch background and foregound if inversed
-        if (block.inversed) {
+        // switch background and foregound if reversed
+        if (block.reversed) {
             [background, foreground] = [foreground, background];
         }
 
@@ -342,15 +385,28 @@ export class CanvasRenderer extends Renderer {
         this.textContext.restore();
     }
 
+    /**
+     * A wrapper of renderBlock that reads the current block at a given position
+     * and renders it
+     * @param {number} column
+     * @param {number} row
+     */
     private renderChar (column: number, row: number) {
         this.assertIndexInRange(column, row);
+
         this.renderBlock(
             this.screen[row][column] || this.getDefaultBlock(),
             column, row
         );
     }
 
-    // renderRange content in range
+    /**
+     * Renders the content in a given rectangle
+     * @param column position of the starting block
+     * @param row position of the starting block
+     * @param nColumns number of columns to render
+     * @param nRows number of rows to render
+     */
     private renderRange (column: number, row: number, nColumns: number, nRows: number) {
         this.assertIndexInRange(column, row);
         this.assertIndexInRange(column + nColumns - 1, row + nRows - 1);
@@ -362,6 +418,9 @@ export class CanvasRenderer extends Renderer {
         }
     }
 
+    /**
+     * Rerender everything
+     */
     private renderAll () {
         this.renderRange(0, 0, this.columns, this.rows);
     }

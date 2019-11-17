@@ -1,8 +1,10 @@
 import { assert } from "./utils";
 import { UnicodeChar, unicodeLength } from "./unicode";
 
-// select graphic rendition code
-// https://en.wikipedia.org/wiki/ANSI_escape_code#SGR_parameters
+/**
+ * Select graphic rendition codes
+ * https://en.wikipedia.org/wiki/ANSI_escape_code#SGR_parameters
+ */
 export enum SGRAttribute {
     SGR_RESET = 0,
 
@@ -96,8 +98,10 @@ export enum TextStyle {
     STYLE_ITALIC
 }
 
-// block represents a single character block on the terminal
-// containing all style related data
+/**
+ * Class representing a single cell in the terminal screen
+ * containing all relevant data for rendering
+ */
 export class Block {
     private char: UnicodeChar | null;
     
@@ -105,7 +109,7 @@ export class Block {
     public foreground: Color;
     public intensity: Intensity;
     public blink: BlinkStatus;
-    public inversed: boolean;
+    public reversed: boolean;
     public style: TextStyle;
 
     constructor (char = null,
@@ -120,7 +124,7 @@ export class Block {
 
         this.intensity = Intensity.SGR_INTENSITY_NORMAL;
         this.blink = BlinkStatus.BLINK_NONE;
-        this.inversed = false;
+        this.reversed = false;
         this.style = TextStyle.STYLE_NORMAL;
     }
 
@@ -137,6 +141,10 @@ export class Block {
     }
 }
 
+/**
+ * Abstract class for a renderer device
+ * This is implemented by CanvasRenderer and TestRenderer
+ */
 export abstract class Renderer {
     private defaultBlock: Block; // default block is equivalent to a null block
 
@@ -144,10 +152,8 @@ export abstract class Renderer {
         this.defaultBlock = defaultBlock;
     }
 
-    // minimum set of interface
+    /** The minimum set of interfaces required */
     abstract setGridSize (columns: number, rows: number): void;
-
-    // behaviour of changing the grid size is implementation dependent
     abstract getGridSize (): { columns: number, rows: number };
 
     abstract setBlock (block: Block | null, column: number, row: number): void;
@@ -156,7 +162,7 @@ export abstract class Renderer {
     abstract setCursor (column: number, row: number): void;
     abstract getCursor (): { column: number, row: number };
 
-    // optional
+    /* Optional methods */
     showCursor () {}
     hideCursor () {}
     enableCursorBlink () {}
@@ -165,6 +171,7 @@ export abstract class Renderer {
     useAlternativeScreen () {}
     useMainScreen () {}
 
+    /** Other utility methods based on the abstract methods above */
     setDefaultBlock (block: Block) {
         this.defaultBlock = block;
     }
@@ -190,9 +197,10 @@ export abstract class Renderer {
         }
     }
 
-    // overwriting scrollDown may be more efficient
-    // positive number to scroll down
-    // negative to scroll up
+    /**
+     * Scroll the screen up or down
+     * @param {number} n integers; positive for scrolling down; negative for scrolling up
+     */
     scroll (n: number) {
         if (n == 0) {
             return;
@@ -238,6 +246,9 @@ export abstract class Renderer {
     }
 }
 
+/**
+ * Applies a sequence of SGR attributes to a block
+ */
 export function applySGRAttribute (attrs: Array<SGRAttribute>, block: Block): Block {
     let final = block.copy();
 
@@ -267,6 +278,28 @@ export function applySGRAttribute (attrs: Array<SGRAttribute>, block: Block): Bl
 
             case SGRAttribute.SGR_NORMAL_STYLE:
                 final.style = TextStyle.STYLE_NORMAL;
+                break;
+
+            // blink
+            case SGRAttribute.SGR_SLOW_BLINK:
+                final.blink = BlinkStatus.BLINK_SLOW;
+                break;
+
+            case SGRAttribute.SGR_RAPID_BLINK:
+                final.blink = BlinkStatus.BLINK_FAST;
+                break;
+
+            case SGRAttribute.SGR_BLINK_OFF:
+                final.blink = BlinkStatus.BLINK_NONE;
+                break;
+
+            // reverse
+            case SGRAttribute.SGR_REVERSE:
+                final.reversed = true;
+                break;
+
+            case SGRAttribute.SGR_REVERSE_OFF:
+                final.reversed = false;
                 break;
 
             // foreground colors
@@ -308,39 +341,39 @@ export function applySGRAttribute (attrs: Array<SGRAttribute>, block: Block): Bl
                 
             // background colors
             case SGRAttribute.SGR_BACKGROUND_BLACK:
-                final.foreground = SGRColor.SGR_COLOR_BLACK;
+                final.background = SGRColor.SGR_COLOR_BLACK;
                 break;
                 
             case SGRAttribute.SGR_BACKGROUND_RED:
-                final.foreground = SGRColor.SGR_COLOR_RED;
+                final.background = SGRColor.SGR_COLOR_RED;
                 break;
                 
             case SGRAttribute.SGR_BACKGROUND_GREEN:
-                final.foreground = SGRColor.SGR_COLOR_GREEN;
+                final.background = SGRColor.SGR_COLOR_GREEN;
                 break;
                 
             case SGRAttribute.SGR_BACKGROUND_YELLOW:
-                final.foreground = SGRColor.SGR_COLOR_YELLOW;
+                final.background = SGRColor.SGR_COLOR_YELLOW;
                 break;
                 
             case SGRAttribute.SGR_BACKGROUND_BLUE:
-                final.foreground = SGRColor.SGR_COLOR_BLUE;
+                final.background = SGRColor.SGR_COLOR_BLUE;
                 break;
                 
             case SGRAttribute.SGR_BACKGROUND_MAGENTA:
-                final.foreground = SGRColor.SGR_COLOR_MAGENTA;
+                final.background = SGRColor.SGR_COLOR_MAGENTA;
                 break;
                 
             case SGRAttribute.SGR_BACKGROUND_CYAN:
-                final.foreground = SGRColor.SGR_COLOR_CYAN;
+                final.background = SGRColor.SGR_COLOR_CYAN;
                 break;
                 
             case SGRAttribute.SGR_BACKGROUND_WHITE:
-                final.foreground = SGRColor.SGR_COLOR_WHITE;
+                final.background = SGRColor.SGR_COLOR_WHITE;
                 break;
                 
             case SGRAttribute.SGR_BACKGROUND_DEFAULT:
-                final.foreground = SGRColor.SGR_COLOR_DEFAULT;
+                final.background = SGRColor.SGR_COLOR_DEFAULT;
                 break;
 
             default:

@@ -1,3 +1,6 @@
+/**
+ * Abstract class for a source (client program)
+ */
 export abstract class Source {
     private handlers: Array<(s: string) => void>;
 
@@ -5,20 +8,24 @@ export abstract class Source {
         this.handlers = [];
     }
 
+    /** bind an event for receiving data from the client program */
     onData (handler: (s: string) => void) {
         this.handlers.push(handler);
     }
 
-    // only called by subclasses
+    /** writing data back to the client program */
+    abstract write (data: string): void;
+
     protected addData (data: string) {
         for (const handler of this.handlers) {
             handler(data);
         }
     }
-
-    abstract write (data: string): void;
 }
 
+/**
+ * Websocket implementation for a source
+ */
 export class WebSocketSource extends Source {
     private ws: WebSocket;
     private buffer: string;

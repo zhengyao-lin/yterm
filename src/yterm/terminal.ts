@@ -1,10 +1,19 @@
 import { fullParser, ControlSequence, ControlSequenceParser } from "./control";
 import { Source } from "./source";
 import { Input } from "./input";
-import { Renderer, Block, SGRAttribute, Intensity, SGRColor, applySGRAttribute } from "./renderer";
+import { Renderer, applySGRAttribute } from "./renderer";
 import { assert } from "./utils";
 
+/**
+ * Core class for a terminal
+ */
 export class Terminal {
+    /** 
+     * "vt100 with no options"
+     * https://vt100.net/docs/vt100-ug/chapter3.html#DA
+     */
+    static PRIMARY_DEVICE_ATTRIBUTE = "\x1b[?1;0c";
+
     private source: Source;
     private renderer: Renderer;
     private input: Input;
@@ -158,11 +167,57 @@ export class Terminal {
                 this.renderer.setCursor(columns - 1, rows - 1);
                 break;
 
+            case "`":
+            case "G": { // horizontal absolute positioning
+                let column = n;
+                const { row } = this.renderer.getCursor();
+
+                column -= 1;
+
+                if (this.renderer.isInRange(column, row)) {
+                    this.renderer.setCursor(column, row);
+                }
+
+                break;
+            }
+
+            case "d": { // vertical absolute positioning
+                let row = n;
+                const { column } = this.renderer.getCursor();
+
+                row -= 1;
+
+                if (this.renderer.isInRange(column, row)) {
+                    this.renderer.setCursor(column, row);
+                }
+
+                break;
+            }
+
+            // reverse index
+            case "M": {
+                // ignoring n
+
+                const { column, row } = this.renderer.getCursor();
+
+                if (row == 0) {
+                    // scroll up
+                    this.renderer.scroll(-1);
+                } else {
+                    this.renderer.setCursor(column, row - 1);
+                }
+
+                break;
+            }
+
             default:
                 assert(false, `unsupported action ${action}`);
         }
     }
 
+    /**
+     * Execute the given control sequence
+     */
     handleControlSequence (seq: ControlSequence) {
         console.log(seq.toString());
 
@@ -246,6 +301,13 @@ export class Terminal {
             //     break;
             // }
 
+            // TODO: finish this after implementing scroll margins
+            // case "CONTROL_DELETE_LINE": {
+            //     const [ n ] = seq.args;
+            //     const { row } = this.renderer.getCursor();
+            //     break;
+            // }
+
             case "CONTROL_INSERT_CHAR": {
                 const [ n ] = seq.args;
                 const { column, row } = this.renderer.getCursor();
@@ -265,32 +327,6 @@ export class Terminal {
 
                 row -= 1;
                 column -= 1;
-
-                if (this.renderer.isInRange(column, row)) {
-                    this.renderer.setCursor(column, row);
-                }
-
-                break;
-            }
-
-            case "CONTROL_CURSOR_HORIZONTAL_POS": {
-                let [ column ] = seq.args;
-                const { row } = this.renderer.getCursor();
-
-                column -= 1;
-
-                if (this.renderer.isInRange(column, row)) {
-                    this.renderer.setCursor(column, row);
-                }
-
-                break;
-            }
-
-            case "CONTROL_CURSOR_VERTICAL_POS": {
-                let [ row ] = seq.args;
-                const { column } = this.renderer.getCursor();
-
-                row -= 1;
 
                 if (this.renderer.isInRange(column, row)) {
                     this.renderer.setCursor(column, row);
@@ -374,6 +410,12 @@ export class Terminal {
                 }
             }
 
+            case "CONTROL_REPORT_CURSOR": {
+                const { column, row } = this.renderer.getCursor();
+                this.source.write(`\x1b[${row + 1};${column + 1}R`);
+                break;
+            }
+
             case "CONTROL_WINDOW_MANIPULATION": {
                 const [ code, a, b ] = seq.args;
 
@@ -396,10 +438,13 @@ export class Terminal {
                 this.renderer.setCursor(0, 0);
                 break;
 
-            case "CONTROL_SEND_DEVICE_ATTR":
-                // TODO: figure out what this ID means
-                console.log("device id requested");
-                this.source.write("\x1b[>1;5202;0c");
+            case "CONTROL_PRIMARY_DEVICE_ATTR":
+                this.source.write(Terminal.PRIMARY_DEVICE_ATTRIBUTE);
+                break;
+
+            case "CONTROL_SECONDARY_DEVICE_ATTR":
+            case "CONTROL_TERTIARY_DEVICE_ATTR":
+                console.log("secondary and tertiary device are not supported by vt100");
                 break;
 
             default:

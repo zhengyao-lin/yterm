@@ -14,7 +14,9 @@ export class Pair<A, B> {
     }
 }
 
-// return a regex representing the union of two languages
+/**
+ * Returns a regex representing the union of two languages
+ */
 export function regexUnion(...rs: Array<RegExp>) {
     if (rs.length == 0) {
         return /$.^/; // a regex that matches nothing ()
@@ -24,6 +26,9 @@ export function regexUnion(...rs: Array<RegExp>) {
     return new RegExp(rs.map(r => `(${r.source})`).join("|"));
 }
 
+/**
+ * Modifies a regex to include the start of a string
+ */
 export function regexMatchStart(r: RegExp) {
     return new RegExp("^" + r.source);
 }

@@ -5,6 +5,10 @@ export interface ColorScheme {
     getSGRBackground (color: SGRColor): string;
 }
 
+/**
+ * A color scheme based on the Tango project
+ * http://tango.freedesktop.org/Tango_Icon_Theme_Guidelines
+ */
 export class TangoColorScheme implements ColorScheme {
     static FOREGROUND_PALETTE: Record<number, string> = {
         [SGRColor.SGR_COLOR_BLACK]: "#2e3436",

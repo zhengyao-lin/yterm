@@ -1,6 +1,8 @@
 import { Source } from "../src/yterm/source";
 import { Renderer, Block } from "../src/yterm/renderer";
-import { unicodeLength, UnicodeChar } from "../src/yterm/unicode"
+import { UnicodeChar } from "../src/yterm/unicode"
+import { Input } from "../src/yterm/input";
+import { Terminal } from "../src/yterm/terminal";
 
 import { expect } from "chai";
 
@@ -41,6 +43,10 @@ export class TestSource extends Source {
         }
 
         return null;
+    }
+
+    expectRecv (data: string) {
+        expect(this.recv()).equals(data);
     }
 }
 
@@ -156,4 +162,52 @@ export class TestRenderer extends Renderer {
             i++;
         }
     }
+
+    expectBlockStyle (column: number, row: number,
+                      char: UnicodeChar | null,
+                      properties: Record<string, any>) {
+        this.assertIndexInRange(column, row);
+
+        const block = this.getBlock(column, row);
+
+        if (char === null) {
+            if (block !== null) {
+                expect(block!.getChar()).equals(null);
+            }
+
+            return;
+        }
+
+        expect(block).not.to.be.null;
+
+        for (const key in properties) {
+            expect(block![key as keyof Block]).equals(properties[key]);
+        }
+    }
+}
+
+export function itWithEcho (
+    msg: string, columns: number, rows: number,
+    f: (s: Source, r: TestRenderer, i: Input, t: Terminal) => void
+) {
+    it(msg, () => {
+        const source = new EchoSource();
+        const renderer = new TestRenderer(columns, rows);
+        const input = new Input();
+        const term = new Terminal(source, renderer, input);
+        f(source, renderer, input, term);
+    });
+}
+
+export function itWithTerminal (
+    msg: string, columns: number, rows: number,
+    f: (s: TestSource, r: TestRenderer, i: Input, t: Terminal) => void
+) {
+    it(msg, () => {
+        const source = new TestSource();
+        const renderer = new TestRenderer(columns, rows);
+        const input = new Input();
+        const term = new Terminal(source, renderer, input);
+        f(source, renderer, input, term);
+    });
 }

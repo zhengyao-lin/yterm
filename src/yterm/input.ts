@@ -1,3 +1,6 @@
+/**
+ * An abstraction of input
+ */
 export class Input {
     private handlers: Array<(a: string) => void>;
 
@@ -24,6 +27,9 @@ export class Input {
     }
 };
 
+/**
+ * Implements an input device based on the keyboard events in browser
+ */
 export class KeyboardEventInput extends Input {
     constructor (dom: EventTarget) {
         super();
