@@ -1,23 +1,26 @@
-const pty = require("node-pty");
-const ws = require("ws");
+import ws from "ws";
+import { spawn, IPty } from "node-pty";
 
 const server = new ws.Server({ host: "localhost", port: 3131 });
-const processes = new Set();
+const processes = new Set<IPty>();
 
 server.on("connection", ws => {
-    const proc = pty.spawn("bash");
+    const proc = spawn("bash", [], {
+        cols: 80,
+        rows: 24
+    });
 
     processes.add(proc);
 
-    proc.on("data", data => {
+    proc.on("data", (data: string) => {
         ws.send(data);
     });
 
-    ws.on("message", msg => {
-        proc.write(msg);
+    ws.on("message", (msg: Buffer) => {
+        proc.write(msg.toString());
     });
 
-    ws.on("close", msg => {
+    ws.on("close", () => {
         proc.kill();
         processes.delete(proc);
     });
