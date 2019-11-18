@@ -19,5 +19,6 @@ sl
 cmatrix
 screenfetch
 less
+curl -L https://raw.githubusercontent.com/keroserene/rickrollrc/master/roll.sh | bash
 
 */

@@ -70,7 +70,7 @@ export enum SGRAttribute {
 export type Color = SGRColor | string;
 
 export enum SGRColor {
-    SGR_COLOR_BLACK,
+    SGR_COLOR_BLACK = 0,
     SGR_COLOR_RED,
     SGR_COLOR_GREEN,
     SGR_COLOR_YELLOW,
@@ -246,13 +246,52 @@ export abstract class Renderer {
     }
 }
 
+function encodeRGB (r: number, g: number, b: number): string {
+    // return "#" + ((r << 16) + (g << 8) + b).toString(16);
+    return `rgb(${r}, ${g}, ${b})`;
+}
+
+function parse8bitColor (n: number): Color {
+    if (0 <= n && n <= 7) {
+        // return the represented color directly
+        return n as SGRColor;
+    }
+
+    if (8 <= n && n <= 15) {
+        // TODO: support high intensity color
+        return (n - 8) as SGRColor;
+    }
+
+    if (16 <= n && n <= 231) {
+        // 6 × 6 × 6 cube (216 colors)
+        // rgb is in base-6
+        const rgb = n - 16;
+        const r = Math.floor(255 / 5 * (rgb / 36));
+        const gb = rgb % 36;
+        const g = Math.floor(255 / 5 * gb / 6);
+        const b = 255 / 5 * (gb % 6);
+
+        return encodeRGB(r, g, b);
+    }
+
+    if (232 <= n && n <= 255) {
+        const grey = Math.round(255 / 23 * (n - 232));
+        return encodeRGB(grey, grey, grey);
+    }
+
+    assert(false, "n not in range [0, 256)");
+    return "";
+}
+
 /**
  * Applies a sequence of SGR attributes to a block
  */
 export function applySGRAttribute (attrs: Array<SGRAttribute>, block: Block): Block {
     let final = block.copy();
 
-    for (const attr of attrs) {
+    for (let i = 0; i < attrs.length; i++) {
+        const attr = attrs[i];
+
         switch (attr) {
             case SGRAttribute.SGR_RESET:
                 final = new Block(); // reset the block
@@ -375,6 +414,57 @@ export function applySGRAttribute (attrs: Array<SGRAttribute>, block: Block): Bl
             case SGRAttribute.SGR_BACKGROUND_DEFAULT:
                 final.background = SGRColor.SGR_COLOR_DEFAULT;
                 break;
+
+            case SGRAttribute.SGR_FOREGROUND_CUSTOM:
+            case SGRAttribute.SGR_BACKGROUND_CUSTOM: {
+                let color = null;
+
+                if (i + 1 < attrs.length) {
+                    switch (attrs[i + 1]) {
+                        case 2: // 2;r;g;b
+                            if (i + 4 < attrs.length) {
+                                const [ r, g, b ] = attrs.slice(i + 2, i + 5);
+
+                                if (0 <= r && r < 256 &&
+                                    0 <= g && g < 256 &&
+                                    0 <= b && b < 256) {
+                                    color = encodeRGB(r, g, b);
+                                    i += 4;
+                                }
+                            }
+
+                            break;
+
+                        case 5: // 5;n https://en.wikipedia.org/wiki/ANSI_escape_code#8-bit
+                            if (i + 2 < attrs.length) {
+                                const n = attrs[i + 2];
+                                
+                                if (0 <= n && n < 256) {
+                                    color = parse8bitColor(n);
+                                    i += 2;
+
+                                    console.log(`decoded 8-bit color: ${color}`);
+                                }
+                            }
+
+                            break;
+                    }
+                }
+
+                if (color !== null) {
+                    console.log(`decoded color: ${color}`);
+
+                    if (attr == SGRAttribute.SGR_FOREGROUND_CUSTOM) {
+                        final.foreground = color;
+                    } else {
+                        final.background = color;
+                    }
+
+                    break;
+                }
+
+                console.log("ill formatted custom color rendition command");
+            }
 
             default:
                 console.log(`SGR attribute ${attr} ignored`);
