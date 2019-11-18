@@ -1,6 +1,7 @@
 # yterm
 
-`yterm` is a terminal emulator in web. Similar project [`xterm.js`](https://github.com/xtermjs/xterm.js)
+`yterm` is a terminal emulator in web. Similar project [`xterm.js`](https://github.com/xtermjs/xterm.js).
+My project proposal and weekly rubrics can be found [here](https://gitlab.engr.illinois.edu/zl38/fa19-cs242-project/tree/proposal)
 
 # Project structure
 

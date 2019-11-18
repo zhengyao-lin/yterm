@@ -1,18 +1,18 @@
 import { describe, it } from "mocha";
 import { expect } from "chai";
 
-import { ANSISequence, parseANSIStream, ANSICommand } from "../src/yterm/ansi";
+import { fullParser, ControlSequence } from "../src/yterm/control";
 
-function parseToChunks (data: string): Array<ANSISequence | string> {
-    const chunks: Array<ANSISequence | string> = [];
+function parseToChunks (data: string): Array<ControlSequence | string> {
+    const chunks: Array<ControlSequence | string> = [];
     const compressedChunks = []; // collapsing consecutive strings together
 
-    parseANSIStream(data, chunks.push.bind(chunks));
+    fullParser.parseStream(data, chunks.push.bind(chunks));
 
     let standingChunk = "";
 
     for (const chunk of chunks) {
-        if (chunk instanceof ANSISequence) {
+        if (chunk instanceof ControlSequence) {
             if (standingChunk !== "") {
                 compressedChunks.push(standingChunk);
                 standingChunk = "";
