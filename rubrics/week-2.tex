@@ -13,27 +13,29 @@
     \section{Abstract}
         In week 2, \texttt{yterm} will support more ANSI sequences. In particular, I'll add support for colors and other graphic-related ANSI sequences (Select Graphic Rendition or SGR). I'll further optimize the code structure and add more thorough tests for ANSI sequences.
     
-    \section{Rubrics}
+    \section{Rubrics (50 pts)}
         \begin{itemize}
-            \item (40\%) Select Graphic Rendition/SGR escape sequences. This includes
+            \item (30 pts) Functional requirements
             \begin{itemize}
-                \item (10\%) Switching font weight (faint/normal/bold)
-                \item (10\%) Switching font style (italic/underline/blinking)
-                \item (10\%) Switching foreground color
-                \item (10\%) Switching background color
+                \item (20 pts) Select Graphic Rendition/SGR escape sequences. This includes
+                \begin{itemize}
+                    \item (5 pts) Switching font weight (faint/normal/bold)
+                    \item (5 pts) Switching font style (italic/underline/blinking)
+                    \item (5 pts) Switching foreground color
+                    \item (5 pts) Switching background color
+                \end{itemize}
+            
+                \item (10 pts) Support and optimize for more command line programs
+                \begin{itemize}
+                    \item (5 pts) \texttt{cmatrix}
+                    \item (5 pts) \texttt{npm}
+                \end{itemize}
             \end{itemize}
         
-            \item (40\%) Support and optimize for more command line programs
+            \item (20 pts) Testing requirements
             \begin{itemize}
-                \item (20\%) \texttt{cmatrix}
-                \item (20\%) \texttt{npm}
-                \item (5\%) \texttt{vi} (extra-credit)
-            \end{itemize}
-        
-            \item (20\%) More tests on ANSI sequences
-            \begin{itemize}
-                \item (10\%) Standardize the implementation of ANSI sequences
-                \item (10\%) More tests for the Terminal class
+                \item (10 pts) More tests on ANSI sequences
+                \item (10 pts) More documentation on ANSI sequences
             \end{itemize}
         \end{itemize}
 \end{document}

@@ -1,0 +1,35 @@
+\documentclass[11pt]{article}
+
+\usepackage[letterpaper, margin=0.9in]{geometry}
+\usepackage{hyperref}
+\usepackage{amsmath, amsfonts, amssymb}
+
+\begin{document}
+    \title{CS 242 Week 3 Rubrics}
+    \author{Zhengyao Lin}
+    \date{November, 2019}
+    \maketitle
+    
+    \section{Abstract}
+        In week 3, \texttt{yterm} will be further optimized to handle the input stream more efficiently. My goal for that is to display the rick roll video correctly without too much loss of ``frame rate''. This would likely involve a complete overhaul of the current parser, I might need to implement a custom lexer to replace the current one. Furthermore, to enhance user experience, I'm going to support more functionality in the CanvasRenderer, including copy/paste and text selection.
+    
+    \section{Rubrics (50 pts)}
+        \begin{itemize}
+            \item (30 pts) Functional requirements
+            \begin{itemize}
+                \item (10 pts) Optimize input parsing
+                \item (10 pts) UI text selection and copy/paste
+                \item (10 pts) Support more applications
+                \begin{itemize}
+                    \item (5 pts) vim
+                    \item (5 pts) rick roll
+                \end{itemize}
+            \end{itemize}
+        
+            \item (20 pts) Testing requirements
+            \begin{itemize}
+                \item (10 pts) More tests on control sequences
+                \item (10 pts) Integration test
+            \end{itemize}
+        \end{itemize}
+\end{document}
