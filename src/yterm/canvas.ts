@@ -35,8 +35,6 @@ export class CanvasRenderer extends Renderer {
     /** Default settings and constants */
     static BLOCK_SPILL = 0;
     static DEFAULT_CURSOR_INTERVAL = 700;
-    static DEFAULT_COLUMNS = 80;
-    static DEFAULT_ROWS = 24;
     static DEFAULT_SCHEME = new TangoColorScheme();
     static DEFAULT_FONT = new Font("Ubuntu Mono", 16);
 
@@ -44,8 +42,6 @@ export class CanvasRenderer extends Renderer {
     private textContext: CanvasRenderingContext2D;
 
     private font!: Font;
-    private columns!: number;
-    private rows!: number;
     private width!: number;
     private height!: number;
     private fontWidth!: number;
@@ -69,14 +65,16 @@ export class CanvasRenderer extends Renderer {
 
     private colorScheme: ColorScheme;
 
+    private renderFrameId: number | null;
+
     constructor (
         parent: HTMLElement,
-        columns = CanvasRenderer.DEFAULT_COLUMNS,
-        rows = CanvasRenderer.DEFAULT_ROWS,
+        columns = Renderer.DEFAULT_COLUMNS,
+        rows = Renderer.DEFAULT_ROWS,
         font = CanvasRenderer.DEFAULT_FONT,
         colorScheme = CanvasRenderer.DEFAULT_SCHEME
     ) {
-        super();
+        super(columns, rows);
 
         this.textLayer = document.createElement("canvas");
         this.textContext = this.textLayer.getContext("2d")!;
@@ -98,27 +96,20 @@ export class CanvasRenderer extends Renderer {
         this.dirtyMark = {};
         this.dirtyAll = false;
 
+        this.renderFrameId = null;
+
         this.setLayout(font, columns, rows);
         this.showCursor();
 
-        this.render();
+        this.startRender();
     }
 
     /**
      * Set the grid size of the terminal
      */
     setGridSize (columns: number, rows: number) {
+        super.setGridSize(columns, rows);
         this.setLayout(this.font, columns, rows);
-    }
-
-    /**
-     * Get the current grid size
-     */
-    getGridSize (): { columns: number, rows: number } {
-        return {
-            columns: this.columns,
-            rows: this.rows
-        }
     }
 
     /**
@@ -143,6 +134,22 @@ export class CanvasRenderer extends Renderer {
      * Set the position of the cursor
      */
     setCursor (column: number, row: number) {
+        if (column < 0) {
+            column = 0;
+        }
+
+        if (column >= this.columns) {
+            column = this.columns - 1;
+        }
+
+        if (row < 0) {
+            row = 0;
+        }
+
+        if (row >= this.rows) {
+            row = this.rows - 1;
+        }
+
         // restore the original cursor block
         this.markRenderChar(this.cursorColumn, this.cursorRow);
          
@@ -248,26 +255,22 @@ export class CanvasRenderer extends Renderer {
     /**
      * A after supplement for the same interface
      */
-    scroll (n: number) {
-        if (n == 0) {
-            return;
-        }
-
+    scroll (_n: number, _scrollMarginTop = 0, _scrollMarginBottom = this.rows - 1) {
         const { columns, rows } = this.getGridSize();
-        let scrollUp = false;
+        const {
+            n,
+            scrollUp,
+            scrollMarginTop,
+            scrollMarginBottom
+        } = this.sanitizeScrollArguments(_n, _scrollMarginTop, _scrollMarginBottom);
 
-        if (n < 0) {
-            n = -n;
-            scrollUp = true;
-        }
+        const scrollWindowRows = scrollMarginBottom - scrollMarginTop + 1;
 
-        if (n > rows) {
-            n = rows;
-        }
+        if (n == 0) return;
 
         if (scrollUp) {
             // remove the last n rows and insert n new ones in the front
-            this.screen.splice(rows - n, n);
+            this.screen.splice(scrollMarginBottom + 1 - n, n);
 
             let prepend = new Array<Array<Block | null>>();
 
@@ -275,13 +278,13 @@ export class CanvasRenderer extends Renderer {
                 prepend.push(new Array(columns));
             }
 
-            this.screen = prepend.concat(this.screen);
+            this.screen.splice(scrollMarginTop, 0, ...prepend);
         } else {
             // remove the first n rows and insert n new ones in the back
-            this.screen.splice(0, n);
+            this.screen.splice(scrollMarginTop, n);
 
             for (let i = 0; i < n; i++) {
-                this.screen.push(new Array(columns));
+                this.screen.splice(scrollMarginBottom, 0, new Array(columns));
             }
         }
 
@@ -297,10 +300,7 @@ export class CanvasRenderer extends Renderer {
         // initialize font
         this.setFont(font);
 
-        this.columns = columns;
         this.width = this.fontWidth * columns;
-    
-        this.rows = rows;
         this.height = this.fontHeight * rows;
 
         this.textLayer.width = this.width;
@@ -479,8 +479,14 @@ export class CanvasRenderer extends Renderer {
     /**
      * Main render loop
      */
-    private render () {
-        this.renderAll();
-        window.requestAnimationFrame(this.render.bind(this));
+    private startRender () {
+        if (this.renderFrameId === null) {
+            const renderer = () => {
+                this.renderAll();
+                this.renderFrameId = window.requestAnimationFrame(renderer);
+            };
+
+            renderer();
+        }
     }
 }

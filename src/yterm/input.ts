@@ -126,27 +126,17 @@ export class KeyboardEventInput extends Input {
 
                 default:
                     if (keyboardEvent.ctrlKey) {
-                        // https://docs.microsoft.com/en-us/windows/console/console-virtual-terminal-sequences#numpad--function-keys
-                        switch (keyboardEvent.key) {
-                            case "d":
-                                input("\x04");
-                                break;
+                        // the full list can be found here
+                        // http://jkorpela.fi/chars/c0.html
+                        const map = "abcdefghijklmnopqrstuvwxyz[\\]^_";
+                        const key = keyboardEvent.key;
 
-                            case "c":
-                                input("\x03");
-                                break;
+                        if (key.length == 1) {
+                            const index = map.indexOf(key);
 
-                            case "a":
-                                input("\x01");
-                                break;
-
-                            case "e":
-                                input("\x05");
-                                break;
-
-                            case "z":
-                                input("\x1a");
-                                break;
+                            if (index != -1) {
+                                input(String.fromCharCode(1 + index));
+                            }
                         }
                     } else {
                         input(keyboardEvent.key);

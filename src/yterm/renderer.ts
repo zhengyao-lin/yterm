@@ -146,19 +146,34 @@ export class Block {
  * This is implemented by CanvasRenderer and TestRenderer
  */
 export abstract class Renderer {
+    static DEFAULT_COLUMNS = 80;
+    static DEFAULT_ROWS = 24;
+    static DEFAULT_BLOCK = new Block();
+
+    protected columns: number;
+    protected rows: number;
+
     private defaultBlock: Block; // default block is equivalent to a null block
 
-    constructor (defaultBlock = new Block()) {
+    constructor (columns = Renderer.DEFAULT_COLUMNS,
+                 rows = Renderer.DEFAULT_ROWS,
+                 defaultBlock = Renderer.DEFAULT_BLOCK) {
+        this.columns = columns;
+        this.rows = rows;
+
         this.defaultBlock = defaultBlock;
     }
 
     /** The minimum set of interfaces required */
-    abstract setGridSize (columns: number, rows: number): void;
-    abstract getGridSize (): { columns: number, rows: number };
 
     abstract setBlock (block: Block | null, column: number, row: number): void;
     abstract getBlock (column: number, row: number): Block | null;
 
+    /**
+     * setCursor should follow the following convention:
+     * if the position (column, row) exceeds the range
+     * setCursor will replace it with the nearest position in range
+     */
     abstract setCursor (column: number, row: number): void;
     abstract getCursor (): { column: number, row: number };
 
@@ -172,6 +187,18 @@ export abstract class Renderer {
     useMainScreen () {}
 
     /** Other utility methods based on the abstract methods above */
+    setGridSize (columns: number, rows: number) {
+        this.columns = columns;
+        this.rows = rows;
+    }
+
+    getGridSize (): { columns: number, rows: number } {
+        return {
+            columns: this.columns,
+            rows: this.rows
+        }
+    }
+
     setDefaultBlock (block: Block) {
         this.defaultBlock = block;
     }
@@ -197,31 +224,59 @@ export abstract class Renderer {
         }
     }
 
-    /**
-     * Scroll the screen up or down
-     * @param {number} n integers; positive for scrolling down; negative for scrolling up
-     */
-    scroll (n: number) {
-        if (n == 0) {
-            return;
-        }
+    sanitizeScrollArguments (
+        n: number,
+        scrollMarginTop: number,
+        scrollMarginBottom: number
+    ): {
+        n: number,
+        scrollUp: boolean,
+        scrollMarginTop: number,
+        scrollMarginBottom: number
+    } {
+        this.assertIndexInRange(0, scrollMarginTop);
+        this.assertIndexInRange(0, scrollMarginBottom);
 
-        const { columns, rows } = this.getGridSize();
         let scrollUp = false;
+        const scrollWindowRows = scrollMarginBottom - scrollMarginTop + 1;
 
         if (n < 0) {
             n = -n;
             scrollUp = true;
         }
 
-        if (n > rows) {
-            n = rows;
+        if (n > scrollWindowRows) {
+            n = scrollWindowRows;
         }
 
+        return {
+            n: n,
+            scrollUp: scrollUp,
+            scrollMarginTop: scrollMarginTop,
+            scrollMarginBottom: scrollMarginBottom
+        }
+    }
+
+    /**
+     * Scroll the screen up or down in the given scroll window ([margin top, margin bottom])
+     * (similar to the definition here https://vt100.net/docs/vt100-ug/chapter3.html#DECSTBM)
+     * @param {number} n integers; positive for scrolling down; negative for scrolling up
+     */
+    scroll (_n: number, _scrollMarginTop = 0, _scrollMarginBottom = this.rows - 1) {
+        const { columns } = this.getGridSize();
+        const {
+            n,
+            scrollUp,
+            scrollMarginTop,
+            scrollMarginBottom
+        } = this.sanitizeScrollArguments(_n, _scrollMarginTop, _scrollMarginBottom);
+
+        if (n == 0) return;
+    
         if (scrollUp) {
-            for (let i = rows - 1; i >= 0; i--) {
+            for (let i = scrollMarginBottom; i >= scrollMarginTop; i--) {
                 for (let j = 0; j < columns; j++) {
-                    if (i < n) {
+                    if (i < scrollMarginTop + n) {
                         // clear the first n rows
                         this.setBlock(null, j, i);
                     } else {
@@ -231,9 +286,9 @@ export abstract class Renderer {
                 }
             }
         } else {
-            for (let i = 0; i < rows; i++) {
+            for (let i = scrollMarginTop; i <= scrollMarginBottom; i++) {
                 for (let j = 0; j < columns; j++) {
-                    if (i < rows - n) {
+                    if (i <= scrollMarginBottom - n) {
                         // move first (rows - n) rows up by n
                         this.setBlock(this.getBlock(j, i + n), j, i);
                     } else {
@@ -243,6 +298,22 @@ export abstract class Renderer {
                 }
             }
         }
+    }
+
+    /**
+     * Remove `n` lines in the end and insert `n` empty lines at `row`
+     */
+    insertLine (row: number, n: number) {
+        assert(n >= 0, "inserting a negative number of lines");
+        this.scroll(-n, row);
+    }
+
+    /**
+     * Delete `n` lines at `row` add `n` empty lines in the end
+     */
+    deleteLine (row: number, n: number) {
+        assert(n >= 0, "deleting a negative number of lines");
+        this.scroll(n, row);
     }
 }
 

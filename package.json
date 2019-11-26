@@ -5,7 +5,7 @@
   "scripts": {
     "server": "npx ts-node src/server/main.ts",
     "babel": "npx babel src/yterm --out-dir dist/yterm --extensions .ts --source-maps inline",
-    "build": "npx tsc && npm run babel && npx babel src/test.ts --out-file dist/test.js --extensions .ts --source-maps inline && npx browserify dist/test.js -o dist/test.js",
+    "build": "npx tsc && npm run babel && npx babel src/demo.ts --out-file dist/demo.js --extensions .ts --source-maps inline && npx browserify dist/demo.js -o dist/demo.js",
     "test": "npx tsc && npx mocha -r ts-node/register tests/**/*.test.ts",
     "coverage": "npx nyc -r text -r lcov -n src/yterm -e .ts npm run test"
   },

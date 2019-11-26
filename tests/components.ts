@@ -51,18 +51,14 @@ export class TestSource extends Source {
 }
 
 export class TestRenderer extends Renderer {
-    private columns: number;
-    private rows: number;
     private cursorColumn: number;
     private cursorRow: number;
 
     private screen: Array<Array<Block | null>>;
 
     constructor (columns: number, rows: number) {
-        super();
+        super(columns, rows);
 
-        this.columns = columns;
-        this.rows = rows;
         this.cursorColumn = 0;
         this.cursorRow = 0;
 
@@ -84,16 +80,8 @@ export class TestRenderer extends Renderer {
     }
 
     setGridSize (columns: number, rows: number) {
-        this.columns = columns;
-        this.rows = rows;
+        super.setGridSize(columns, rows);
         this.screen = TestRenderer.newScreen(columns, rows);
-    }
-
-    getGridSize (): { columns: number, rows: number } {
-        return {
-            columns: this.columns,
-            rows: this.rows
-        }
     }
 
     setBlock (block: Block | null, column: number, row: number) {
@@ -107,6 +95,22 @@ export class TestRenderer extends Renderer {
     }
 
     setCursor (column: number, row: number) {
+        if (column < 0) {
+            column = 0;
+        }
+
+        if (column >= this.columns) {
+            column = this.columns - 1;
+        }
+
+        if (row < 0) {
+            row = 0;
+        }
+
+        if (row >= this.rows) {
+            row = this.rows - 1;
+        }
+        
         this.cursorColumn = column;
         this.cursorRow = row;
     }

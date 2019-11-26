@@ -139,28 +139,24 @@ export class Terminal {
         const { columns, rows } = this.renderer.getGridSize();
 
         switch (action) {
+            // NOTE: A/B/C/D would NOT ignore out-of-bound requests
+            // but rather set the cursor position to the nearest
+            // in-bound position
+
             case "A": // up
-                if (this.renderer.isInRange(column, row - n)) {
-                    this.renderer.setCursor(column, row - n);
-                }
+                this.renderer.setCursor(column, row - n);
                 break;
 
             case "B": // down
-                if (this.renderer.isInRange(column, row + n)) {
-                    this.renderer.setCursor(column, row + n);
-                }
+                this.renderer.setCursor(column, row + n);
                 break;
 
             case "C": // right
-                if (this.renderer.isInRange(column + n, row)) {
-                    this.renderer.setCursor(column + n, row);
-                }
+                this.renderer.setCursor(column + n, row);
                 break;
 
             case "D": // left
-                if (this.renderer.isInRange(column - n, row)) {
-                    this.renderer.setCursor(column - n, row);
-                }
+                this.renderer.setCursor(column - n, row);
                 break;
 
             case "H": // home (0, 0)
@@ -178,9 +174,7 @@ export class Terminal {
 
                 column -= 1;
 
-                if (this.renderer.isInRange(column, row)) {
-                    this.renderer.setCursor(column, row);
-                }
+                this.renderer.setCursor(column, row);
 
                 break;
             }
@@ -191,9 +185,7 @@ export class Terminal {
 
                 row -= 1;
 
-                if (this.renderer.isInRange(column, row)) {
-                    this.renderer.setCursor(column, row);
-                }
+                this.renderer.setCursor(column, row);
 
                 break;
             }
@@ -249,7 +241,7 @@ export class Terminal {
             handler(seq);
             // console.log(seq.toString());
         } else {
-            // console.log("not implemented", seq);
+            console.log("not implemented", seq);
         }
     }
 
@@ -278,12 +270,6 @@ export class Terminal {
         this.registerHandler("CONTROL_CURSOR_MOVE", seq => {
             const [ n, action ] = seq.args;
             this.cursorMove(n, action);
-        });
-
-        this.registerHandler("CONTROL_DELETE_CHAR", seq => {
-            const [ n ] = seq.args;
-            const { column, row } = this.renderer.getCursor();
-            this.deleteInRow(row, column, column + n - 1);
         });
         
         this.registerHandler("CONTROL_TAB", _ => {
@@ -321,25 +307,28 @@ export class Terminal {
             }
         });
 
-        // case "CONTROL_INSERT_LINE": {
-        //     const [ n ] = seq.args;
-        //     const { column, row } = this.renderer.getCursor();
-        //     this.insertLine(row, n);
-
-        //     break;
-        // }
-
-        // TODO: finish this after implementing scroll margins
-        // case "CONTROL_DELETE_LINE": {
-        //     const [ n ] = seq.args;
-        //     const { row } = this.renderer.getCursor();
-        //     break;
-        // }
-
         this.registerHandler("CONTROL_INSERT_CHAR", seq => {
             const [ n ] = seq.args;
             const { column, row } = this.renderer.getCursor();
             this.insertInRow(row, column, n);
+        });
+
+        this.registerHandler("CONTROL_DELETE_CHAR", seq => {
+            const [ n ] = seq.args;
+            const { column, row } = this.renderer.getCursor();
+            this.deleteInRow(row, column, column + n - 1);
+        });
+
+        this.registerHandler("CONTROL_INSERT_LINE", seq => {
+            const [ n ] = seq.args;
+            const { row } = this.renderer.getCursor();
+            this.renderer.insertLine(row, n);
+        });
+
+        this.registerHandler("CONTROL_DELETE_LINE", seq => {
+            const [ n ] = seq.args;
+            const { row } = this.renderer.getCursor();
+            this.renderer.deleteLine(row, n);
         });
 
         this.registerHandler("CONTROL_GRAPHIC_RENDITION", seq => {
@@ -353,9 +342,7 @@ export class Terminal {
             row -= 1;
             column -= 1;
 
-            if (this.renderer.isInRange(column, row)) {
-                this.renderer.setCursor(column, row);
-            }
+            this.renderer.setCursor(column, row);
         });
 
         this.registerHandler("CONTROL_SET_RESET_MODE", seq => {
@@ -395,9 +382,7 @@ export class Terminal {
         });
 
         this.registerHandler("CONTROL_RESTORE_CURSOR", _ => {
-            if (this.renderer.isInRange(this.savedCursorColumn, this.savedCursorRow)) {
-                this.renderer.setCursor(this.savedCursorColumn, this.savedCursorRow);
-            }
+            this.renderer.setCursor(this.savedCursorColumn, this.savedCursorRow);
         });
 
         this.registerHandler("CONTROL_REVERSE_INDEX", _ => {

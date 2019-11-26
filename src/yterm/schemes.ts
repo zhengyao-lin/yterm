@@ -31,7 +31,7 @@ export class TangoColorScheme implements ColorScheme {
         [SGRColor.SGR_COLOR_MAGENTA]: "#5c3565",
         [SGRColor.SGR_COLOR_CYAN]: "#3465a4",
         [SGRColor.SGR_COLOR_WHITE]: "#eeeeec",
-        [SGRColor.SGR_COLOR_DEFAULT]: "#2e3436"
+        [SGRColor.SGR_COLOR_DEFAULT]: "#2f3640" // "#2e3436"
     };
 
     getSGRForeground (color: SGRColor) {

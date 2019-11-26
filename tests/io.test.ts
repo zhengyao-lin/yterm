@@ -1,7 +1,7 @@
 import { describe } from "mocha";
 import { itWithEcho } from "./components";
 
-describe("Terminal basic", () => {
+describe("Terminal IO", () => {
     itWithEcho("supports basic printing", 10, 8, (source, renderer, input, term) => {
         input.input("12345678901");
         renderer.expectLine(0, 0, "1234567890");
