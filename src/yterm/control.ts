@@ -284,31 +284,82 @@ export const asciiControlSequences = [
  * Class for parsing source input
  */
 export class ControlSequenceParser {
+    /**
+     * Wait for the next chunk if there is a escape char within this distance to the end of the buffer
+     */
+    static MIN_ESCAPE_WAIT_LENGTH = 10;
+
     private defs: Array<ControlDefinition>;
     private unionPattern: RegExp;
+    private handlers: Array<(chunk: ControlSequence | string) => void>;
+
+    private buffer: string;
 
     constructor (defs: Array<ControlDefinition>) {
         this.defs = defs;
         this.unionPattern = regexUnion(...defs.map(d => d.pattern)); // union pattern for fast screening
+        this.handlers = [];
+        this.buffer = "";
+    }
+
+    /**
+     * Register event handler upon decoding a chunk
+     */
+    onChunk (handler: (chunk: ControlSequence | string) => void) {
+        this.handlers.push(handler);
+    }
+
+    /**
+     * Push new data onto the buffer
+     */
+    pushData (data: string) {
+        this.buffer += data;
+        this.buffer = this.parserData(this.buffer);
+    }
+
+    private callHandler (chunk: ControlSequence | string) {
+        for (const handler of this.handlers) {
+            handler(chunk);
+        }
     }
 
     /**
      * Parse a stream of data as chunks of raw strings (that are going to be printed directly)
      * and escaped sequences
      * 
-     * TODO: do we need to deal with sequences that are broken up in two chunks of data?
+     * Returns the number of bytes parsed
      */
-    parseStream (data: string, handler: (chunk: ControlSequence | string) => void) {
+    private parserData (data: string): string {
+        const originalLength = data.length;
+
         while (data.length) {
             const pos = data.search(this.unionPattern);
 
             if (pos == -1) {
-                handler(data);
+                // no match but we still need to consider the
+                // case where sequences are broken up in different chunks
+                
+                // heuristic: try to find the escape character
+                // if found and it's very close to the end
+                // flush the previous part and wait for the next chunk of data
+
+                const escPos = data.lastIndexOf("\x1b");
+                
+                if (escPos != -1 &&
+                    data.length - escPos <= ControlSequenceParser.MIN_ESCAPE_WAIT_LENGTH) {
+                    this.callHandler(data.substring(0, escPos));
+                    data = data.substring(escPos);
+                } else {
+                    // nevermind
+                    this.callHandler(data);
+                    data = ""; // nothing left
+                }
+            
                 break;
             }
 
             if (pos) {
-                handler(data.substring(0, pos));
+                this.callHandler(data.substring(0, pos));
             }
             
             data = data.substring(pos);
@@ -318,7 +369,7 @@ export class ControlSequenceParser {
                 const match = def.patternMatchStart.exec(data);
 
                 if (match !== null) {
-                    handler(def.handler(match));
+                    this.callHandler(def.handler(match));
                     data = data.substring(match[0].length);
                     break;
                 }
@@ -327,6 +378,8 @@ export class ControlSequenceParser {
             // there should be at least one match,
             // otherwise unionRegex is not working correctly
         }
+
+        return data;
     }
 }
 

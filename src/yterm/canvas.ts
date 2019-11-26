@@ -57,6 +57,10 @@ export class CanvasRenderer extends Renderer {
     private mainScreenCursorColumn: number;
     private mainScreenCursorRow: number;
 
+    // marking the dirty area that needs to be redrawn
+    private dirtyMark: Record<string, boolean>;
+    private dirtyAll: boolean; // a flag that overrides the dirtyMark
+
     private cursorColumn: number;
     private cursorRow: number;
     private cursorIntervalId: NodeJS.Timeout | null;
@@ -91,8 +95,13 @@ export class CanvasRenderer extends Renderer {
         this.mainScreenCursorColumn = 0;
         this.mainScreenCursorRow = 0;
 
+        this.dirtyMark = {};
+        this.dirtyAll = false;
+
         this.setLayout(font, columns, rows);
         this.showCursor();
+
+        this.render();
     }
 
     /**
@@ -119,7 +128,7 @@ export class CanvasRenderer extends Renderer {
     setBlock (block: Block | null, column: number, row: number) {
         this.assertIndexInRange(column, row);
         this.screen[row][column] = block;
-        this.renderChar(column, row);
+        this.markRenderChar(column, row);
     }
 
     /**
@@ -135,7 +144,7 @@ export class CanvasRenderer extends Renderer {
      */
     setCursor (column: number, row: number) {
         // restore the original cursor block
-        this.renderChar(this.cursorColumn, this.cursorRow);
+        this.markRenderChar(this.cursorColumn, this.cursorRow);
          
         this.cursorColumn = column;
         this.cursorRow = row;
@@ -213,7 +222,7 @@ export class CanvasRenderer extends Renderer {
         
         this.setCursor(0, 0);
 
-        this.renderAll();
+        this.markRenderAll();
     }
 
     /**
@@ -232,8 +241,51 @@ export class CanvasRenderer extends Renderer {
 
             this.setCursor(this.mainScreenCursorColumn, this.mainScreenCursorRow);
 
-            this.renderAll();
+            this.markRenderAll();
         } // else already in the main screen
+    }
+
+    /**
+     * A after supplement for the same interface
+     */
+    scroll (n: number) {
+        if (n == 0) {
+            return;
+        }
+
+        const { columns, rows } = this.getGridSize();
+        let scrollUp = false;
+
+        if (n < 0) {
+            n = -n;
+            scrollUp = true;
+        }
+
+        if (n > rows) {
+            n = rows;
+        }
+
+        if (scrollUp) {
+            // remove the last n rows and insert n new ones in the front
+            this.screen.splice(rows - n, n);
+
+            let prepend = new Array<Array<Block | null>>();
+
+            for (let i = 0; i < n; i++) {
+                prepend.push(new Array(columns));
+            }
+
+            this.screen = prepend.concat(this.screen);
+        } else {
+            // remove the first n rows and insert n new ones in the back
+            this.screen.splice(0, n);
+
+            for (let i = 0; i < n; i++) {
+                this.screen.push(new Array(columns));
+            }
+        }
+
+        this.markRenderAll();
     }
 
     /**
@@ -281,7 +333,7 @@ export class CanvasRenderer extends Renderer {
             this.hideCursor();
         }
 
-        this.renderAll();
+        this.markRenderAll();
     }
 
     /**
@@ -312,6 +364,18 @@ export class CanvasRenderer extends Renderer {
         } else {
             this.renderBlock(block, this.cursorColumn, this.cursorRow);
         }
+    }
+
+    /**
+     * markRender* functions are used for marking dirty areas
+     * but not redrawing immediately
+     */
+    private markRenderChar (column: number, row: number) {
+        this.dirtyMark[column + "," + row] = true;
+    }
+
+    private markRenderAll () {
+        this.dirtyAll = true;
     }
 
     /**
@@ -350,29 +414,15 @@ export class CanvasRenderer extends Renderer {
         }
 
         // render text style
-        switch (block.style) {
-            case TextStyle.STYLE_NORMAL:
-                style = "normal";
-                break;
-
-            case TextStyle.STYLE_ITALIC:
-                style = "italic";
-                break;
+        if (block.style == TextStyle.STYLE_ITALIC) {
+            style = "italic";
         }
 
         // render text weight
-        switch (block.intensity) {
-            case Intensity.SGR_INTENSITY_HIGH:
-                weight = "bold";
-                break;
-            
-            case Intensity.SGR_INTENSITY_LOW:
-                weight = "lighter";
-                break;
-
-            case Intensity.SGR_INTENSITY_NORMAL:
-                weight = "normal";
-                break;
+        if (block.intensity == Intensity.SGR_INTENSITY_HIGH) {
+            weight = "bold";
+        } else if (block.intensity == Intensity.SGR_INTENSITY_LOW) {
+            weight = "lighter";
         }
 
         this.textContext.fillStyle = background;
@@ -401,27 +451,36 @@ export class CanvasRenderer extends Renderer {
     }
 
     /**
-     * Renders the content in a given rectangle
-     * @param column position of the starting block
-     * @param row position of the starting block
-     * @param nColumns number of columns to render
-     * @param nRows number of rows to render
+     * Rerender everything
+     * Avoid calling this function directly
      */
-    private renderRange (column: number, row: number, nColumns: number, nRows: number) {
-        this.assertIndexInRange(column, row);
-        this.assertIndexInRange(column + nColumns - 1, row + nRows - 1);
-
-        for (let i = 0; i < nColumns; i++) {
-            for (let j = 0; j < nRows; j++) {
-                this.renderChar(i + column, j + row);
+    private renderAll () {
+        if (this.dirtyAll) {
+            for (let i = 0; i < this.columns; i++) {
+                for (let j = 0; j < this.rows; j++) {
+                    this.renderChar(i, j);
+                }
+            }
+        } else {
+            for (let i = 0; i < this.columns; i++) {
+                for (let j = 0; j < this.rows; j++) {
+                    if (this.dirtyMark[i + "," + j] === true) {
+                        this.renderChar(i, j);
+                    }
+                }
             }
         }
+
+        // clear all dirty marks
+        this.dirtyMark = {};
+        this.dirtyAll = false;
     }
 
     /**
-     * Rerender everything
+     * Main render loop
      */
-    private renderAll () {
-        this.renderRange(0, 0, this.columns, this.rows);
+    private render () {
+        this.renderAll();
+        window.requestAnimationFrame(this.render.bind(this));
     }
 }

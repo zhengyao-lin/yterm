@@ -289,132 +289,104 @@ function parse8bitColor (n: number): Color {
 export function applySGRAttribute (attrs: Array<SGRAttribute>, block: Block): Block {
     let final = block.copy();
 
+    const attributeHandlerMap: Record<number, () => void> = {
+        [SGRAttribute.SGR_RESET]: () => final = new Block(),
+
+        // intensity settings
+        [SGRAttribute.SGR_HIGH_INTENSITY]:
+            () => final.intensity = Intensity.SGR_INTENSITY_HIGH,
+
+        [SGRAttribute.SGR_LOW_INTENSITY]:
+            () => final.intensity = Intensity.SGR_INTENSITY_LOW,
+
+        [SGRAttribute.SGR_NORMAL_INTENSITY]:
+            () => final.intensity = Intensity.SGR_INTENSITY_NORMAL,
+
+        // style settings
+        [SGRAttribute.SGR_ITALIC_STYLE]:
+            () => final.style = TextStyle.STYLE_ITALIC,
+
+        [SGRAttribute.SGR_NORMAL_STYLE]:
+            () => final.style = TextStyle.STYLE_NORMAL,
+
+        // blink settings
+        [SGRAttribute.SGR_SLOW_BLINK]:
+            () => final.blink = BlinkStatus.BLINK_SLOW,
+
+        [SGRAttribute.SGR_RAPID_BLINK]:
+            () => final.blink = BlinkStatus.BLINK_FAST,
+
+        [SGRAttribute.SGR_BLINK_OFF]:
+            () => final.blink = BlinkStatus.BLINK_NONE,
+
+        // reverse color (switch background & foreground)
+        [SGRAttribute.SGR_REVERSE]:
+            () => final.reversed = true,
+
+        [SGRAttribute.SGR_REVERSE_OFF]:
+            () => final.reversed = false,
+
+        // foreground colors
+        [SGRAttribute.SGR_FOREGROUND_BLACK]:
+            () => final.foreground = SGRColor.SGR_COLOR_BLACK,
+
+        [SGRAttribute.SGR_FOREGROUND_RED]:
+            () => final.foreground = SGRColor.SGR_COLOR_RED,
+
+        [SGRAttribute.SGR_FOREGROUND_GREEN]:
+            () => final.foreground = SGRColor.SGR_COLOR_GREEN,
+
+        [SGRAttribute.SGR_FOREGROUND_YELLOW]:
+            () => final.foreground = SGRColor.SGR_COLOR_YELLOW,
+
+        [SGRAttribute.SGR_FOREGROUND_BLUE]:
+            () => final.foreground = SGRColor.SGR_COLOR_BLUE,
+            
+        [SGRAttribute.SGR_FOREGROUND_MAGENTA]:
+            () => final.foreground = SGRColor.SGR_COLOR_MAGENTA,
+                
+        [SGRAttribute.SGR_FOREGROUND_CYAN]:
+            () => final.foreground = SGRColor.SGR_COLOR_CYAN,
+                
+        [SGRAttribute.SGR_FOREGROUND_WHITE]:
+            () => final.foreground = SGRColor.SGR_COLOR_WHITE,
+            
+        [SGRAttribute.SGR_FOREGROUND_DEFAULT]:
+            () => final.foreground = SGRColor.SGR_COLOR_DEFAULT,
+            
+        // background colors
+        [SGRAttribute.SGR_BACKGROUND_BLACK]:
+            () => final.background = SGRColor.SGR_COLOR_BLACK,
+            
+        [SGRAttribute.SGR_BACKGROUND_RED]:
+            () => final.background = SGRColor.SGR_COLOR_RED,
+            
+        [SGRAttribute.SGR_BACKGROUND_GREEN]:
+            () => final.background = SGRColor.SGR_COLOR_GREEN,
+            
+        [SGRAttribute.SGR_BACKGROUND_YELLOW]:
+            () => final.background = SGRColor.SGR_COLOR_YELLOW,
+            
+        [SGRAttribute.SGR_BACKGROUND_BLUE]:
+            () => final.background = SGRColor.SGR_COLOR_BLUE,
+            
+        [SGRAttribute.SGR_BACKGROUND_MAGENTA]:
+            () => final.background = SGRColor.SGR_COLOR_MAGENTA,
+            
+        [SGRAttribute.SGR_BACKGROUND_CYAN]:
+            () => final.background = SGRColor.SGR_COLOR_CYAN,
+            
+        [SGRAttribute.SGR_BACKGROUND_WHITE]:
+            () => final.background = SGRColor.SGR_COLOR_WHITE,
+            
+        [SGRAttribute.SGR_BACKGROUND_DEFAULT]:
+            () => final.background = SGRColor.SGR_COLOR_DEFAULT,
+    };
+
     for (let i = 0; i < attrs.length; i++) {
         const attr = attrs[i];
 
         switch (attr) {
-            case SGRAttribute.SGR_RESET:
-                final = new Block(); // reset the block
-                break;
-
-            // intensity
-            case SGRAttribute.SGR_HIGH_INTENSITY:
-                final.intensity = Intensity.SGR_INTENSITY_HIGH;
-                break;
-
-            case SGRAttribute.SGR_LOW_INTENSITY:
-                final.intensity = Intensity.SGR_INTENSITY_LOW;
-                break;
-
-            case SGRAttribute.SGR_NORMAL_INTENSITY:
-                final.intensity = Intensity.SGR_INTENSITY_NORMAL;
-                break;
-
-            // style
-            case SGRAttribute.SGR_ITALIC_STYLE:
-                final.style = TextStyle.STYLE_ITALIC;
-                break;
-
-            case SGRAttribute.SGR_NORMAL_STYLE:
-                final.style = TextStyle.STYLE_NORMAL;
-                break;
-
-            // blink
-            case SGRAttribute.SGR_SLOW_BLINK:
-                final.blink = BlinkStatus.BLINK_SLOW;
-                break;
-
-            case SGRAttribute.SGR_RAPID_BLINK:
-                final.blink = BlinkStatus.BLINK_FAST;
-                break;
-
-            case SGRAttribute.SGR_BLINK_OFF:
-                final.blink = BlinkStatus.BLINK_NONE;
-                break;
-
-            // reverse
-            case SGRAttribute.SGR_REVERSE:
-                final.reversed = true;
-                break;
-
-            case SGRAttribute.SGR_REVERSE_OFF:
-                final.reversed = false;
-                break;
-
-            // foreground colors
-            case SGRAttribute.SGR_FOREGROUND_BLACK:
-                final.foreground = SGRColor.SGR_COLOR_BLACK;
-                break;
-
-            case SGRAttribute.SGR_FOREGROUND_RED:
-                final.foreground = SGRColor.SGR_COLOR_RED;
-                break;
-
-            case SGRAttribute.SGR_FOREGROUND_GREEN:
-                final.foreground = SGRColor.SGR_COLOR_GREEN;
-                break;
-
-            case SGRAttribute.SGR_FOREGROUND_YELLOW:
-                final.foreground = SGRColor.SGR_COLOR_YELLOW;
-                break;
-
-            case SGRAttribute.SGR_FOREGROUND_BLUE:
-                final.foreground = SGRColor.SGR_COLOR_BLUE;
-                break;
-                
-            case SGRAttribute.SGR_FOREGROUND_MAGENTA:
-                final.foreground = SGRColor.SGR_COLOR_MAGENTA;
-                break;
-                    
-            case SGRAttribute.SGR_FOREGROUND_CYAN:
-                final.foreground = SGRColor.SGR_COLOR_CYAN;
-                break;
-                    
-            case SGRAttribute.SGR_FOREGROUND_WHITE:
-                final.foreground = SGRColor.SGR_COLOR_WHITE;
-                break;
-                
-            case SGRAttribute.SGR_FOREGROUND_DEFAULT:
-                final.foreground = SGRColor.SGR_COLOR_DEFAULT;
-                break;
-                
-            // background colors
-            case SGRAttribute.SGR_BACKGROUND_BLACK:
-                final.background = SGRColor.SGR_COLOR_BLACK;
-                break;
-                
-            case SGRAttribute.SGR_BACKGROUND_RED:
-                final.background = SGRColor.SGR_COLOR_RED;
-                break;
-                
-            case SGRAttribute.SGR_BACKGROUND_GREEN:
-                final.background = SGRColor.SGR_COLOR_GREEN;
-                break;
-                
-            case SGRAttribute.SGR_BACKGROUND_YELLOW:
-                final.background = SGRColor.SGR_COLOR_YELLOW;
-                break;
-                
-            case SGRAttribute.SGR_BACKGROUND_BLUE:
-                final.background = SGRColor.SGR_COLOR_BLUE;
-                break;
-                
-            case SGRAttribute.SGR_BACKGROUND_MAGENTA:
-                final.background = SGRColor.SGR_COLOR_MAGENTA;
-                break;
-                
-            case SGRAttribute.SGR_BACKGROUND_CYAN:
-                final.background = SGRColor.SGR_COLOR_CYAN;
-                break;
-                
-            case SGRAttribute.SGR_BACKGROUND_WHITE:
-                final.background = SGRColor.SGR_COLOR_WHITE;
-                break;
-                
-            case SGRAttribute.SGR_BACKGROUND_DEFAULT:
-                final.background = SGRColor.SGR_COLOR_DEFAULT;
-                break;
-
             case SGRAttribute.SGR_FOREGROUND_CUSTOM:
             case SGRAttribute.SGR_BACKGROUND_CUSTOM: {
                 let color = null;
@@ -466,8 +438,15 @@ export function applySGRAttribute (attrs: Array<SGRAttribute>, block: Block): Bl
                 console.log("ill formatted custom color rendition command");
             }
 
-            default:
-                console.log(`SGR attribute ${attr} ignored`);
+            default: {
+                const handler = attributeHandlerMap[attr];
+
+                if (typeof handler == "function") {
+                    handler();
+                } else {
+                    console.log(`SGR attribute ${attr} not implemented`);
+                }
+            }
         }
     }
 

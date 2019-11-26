@@ -22,34 +22,38 @@ export class Terminal {
     private savedCursorColumn: number;
     private savedCursorRow: number;
 
+    private controlHandlers: Record<string, (seq: ControlSequence) => void>;
+
     constructor (source: Source, renderer: Renderer, input: Input) {
         this.source = source;
         this.renderer = renderer;
         this.input = input;
         this.controlParser = fullParser;
 
-        this.renderer.setCursor(0, 0);
+        this.controlParser.onChunk(chunk => {
+            if (chunk instanceof ControlSequence) {
+                this.handleControlSequence(chunk);
+            } else {
+                this.printText(chunk);
+            }
+        });
 
         this.source.onData(data => {
-            this.controlParser.parseStream(data, chunk => {
-                if (chunk instanceof ControlSequence) {
-                    this.handleControlSequence(chunk);
-                } else {
-                    this.printText(chunk);
-                }
-            });
+            this.controlParser.pushData(data);
         });
 
         this.input.onInput(data => {
             this.source.write(data);
         });
 
+        this.renderer.setCursor(0, 0);
+
         this.savedCursorColumn = -1;
         this.savedCursorRow = -1;
 
-        // ESC [ 8 ; Ph ; Pw t
-        // signal bash to change dimension
-        // this.source.write(`\x1b[8;${this.columns};${this.rows}t`);
+        this.controlHandlers = {};
+
+        this.initControlHandlers();
     }
 
     newline () {
@@ -215,245 +219,8 @@ export class Terminal {
         }
     }
 
-    /**
-     * Execute the given control sequence
-     */
-    handleControlSequence (seq: ControlSequence) {
-        console.log(seq.toString());
-
-        switch (seq.cmd) {
-            case "CONTROL_OS_CONTROL": {
-                const [ code, param ] = seq.args;
-
-                switch (code) {
-                    case 0:
-                        console.log(`title changed to ${param}`);
-                        break;
-
-                    default:
-                        console.log(`unsupported os control ${code};${param}`);
-                }
-
-                break;
-            }
-
-            case "CONTROL_BACKSPACE":
-                this.cursorMove(1, "D"); // move left for 1 unit
-                break;
-
-            case "CONTROL_CURSOR_MOVE": {
-                const [ n, action ] = seq.args;
-                this.cursorMove(n, action);
-                break;
-            }
-
-            case "CONTROL_DELETE_CHAR": {
-                const [ n ] = seq.args;
-                const { column, row } = this.renderer.getCursor();
-                this.deleteInRow(row, column, column + n - 1);
-                break;
-            }
-
-            case "CONTROL_TAB":
-                this.printText("    ");
-                break;
-
-            case "CONTROL_CARRIAGE_RETURN":
-                const { row } = this.renderer.getCursor();
-                this.renderer.setCursor(0, row);
-                break;
-
-            case "CONTROL_ERASE_IN_DISPLAY": {
-                const [ code ] = seq.args;
-                const { columns, rows } = this.renderer.getGridSize();
-                const { column: cursorColumn, row: cursorRow } = this.renderer.getCursor();
-
-                if (code == 0) {
-                    this.eraseInScreen(cursorColumn, cursorRow, columns - 1, rows - 1);
-                } else if (code == 1) {
-                    this.eraseInScreen(0, 0, cursorColumn, cursorRow);
-                } else if (code == 2) {
-                    // erase entire screen
-                    this.eraseInScreen(0, 0, columns - 1, rows - 1);
-                }
-
-                break;
-            }
-
-            case "CONTROL_ERASE_IN_LINE": {
-                const [ code ] = seq.args;
-
-                if (code == 0) {
-                    const { column, row } = this.renderer.getCursor();
-                    this.eraseInRow(row, column, this.renderer.getGridSize().columns - 1);
-                } else {
-                    console.log(`unsupported code erase in line ${code}`);
-                }
-
-                break;
-            }
-
-            // case "CONTROL_INSERT_LINE": {
-            //     const [ n ] = seq.args;
-            //     const { column, row } = this.renderer.getCursor();
-            //     this.insertLine(row, n);
-
-            //     break;
-            // }
-
-            // TODO: finish this after implementing scroll margins
-            // case "CONTROL_DELETE_LINE": {
-            //     const [ n ] = seq.args;
-            //     const { row } = this.renderer.getCursor();
-            //     break;
-            // }
-
-            case "CONTROL_INSERT_CHAR": {
-                const [ n ] = seq.args;
-                const { column, row } = this.renderer.getCursor();
-                this.insertInRow(row, column, n);
-
-                break;
-            }
-
-            case "CONTROL_GRAPHIC_RENDITION": {
-                const newDefault = applySGRAttribute(seq.args, this.renderer.getDefaultBlock());
-                this.renderer.setDefaultBlock(newDefault);
-                break;
-            }
-
-            case "CONTROL_CURSOR_MOVE_DIRECT": {
-                let [ row, column ] = seq.args;
-
-                row -= 1;
-                column -= 1;
-
-                if (this.renderer.isInRange(column, row)) {
-                    this.renderer.setCursor(column, row);
-                }
-
-                break;
-            }
-            
-            case "CONTROL_SET_RESET_MODE": {
-                const [ mode, action ] = seq.args;
-            
-                switch (mode + action) {
-                    case "?12h":
-                        this.renderer.enableCursorBlink();
-                        break;
-
-                    case "?12l":
-                        this.renderer.disableCursorBlink();
-                        break;
-
-                    case "?25h":
-                        this.renderer.showCursor();
-                        break;
-
-                    case "?25l":
-                        this.renderer.hideCursor();
-                        break;
-
-                    case "?1049h":
-                        this.renderer.useAlternativeScreen();
-                        break;
-
-                    case "?1049l":
-                        this.renderer.useMainScreen();
-                        break;
-
-                    // turn on/off application cursor keys mode
-                    // https://the.earth.li/~sgtatham/putty/0.60/htmldoc/Chapter4.html#config-appcursor
-                    case "?1h":
-                        this.input.setApplicationCursorMode(true);
-                        break;
-
-                    case "?1l":
-                        this.input.setApplicationCursorMode(false);
-                        break;
-
-                    case "?2004":
-                        // bracketed paste mode
-                        // https://cirw.in/blog/bracketed-paste
-
-                    default:
-                        console.log(`unsupported mode ${mode + action}`);
-                }
-
-                break;
-            }
-
-            case "CONTROL_SAVE_CURSOR": {
-                const { column, row } = this.renderer.getCursor();
-                this.savedCursorColumn = column;
-                this.savedCursorRow = row;
-                break;
-            }
-
-            case "CONTROL_RESTORE_CURSOR": {
-                if (this.renderer.isInRange(this.savedCursorColumn, this.savedCursorRow)) {
-                    this.renderer.setCursor(this.savedCursorColumn, this.savedCursorRow);
-                }
-
-                break;
-            }
-
-            case "CONTROL_REVERSE_INDEX": {
-                const { column, row } = this.renderer.getCursor();
-
-                if (row == 0) {
-                    // scroll up
-                    this.renderer.scroll(-1);
-                } else {
-                    this.renderer.setCursor(column, row - 1);
-                }
-            }
-
-            case "CONTROL_REPORT_CURSOR": {
-                const { column, row } = this.renderer.getCursor();
-                this.source.write(`\x1b[${row + 1};${column + 1}R`);
-                break;
-            }
-
-            case "CONTROL_WINDOW_MANIPULATION": {
-                const [ code, a, b ] = seq.args;
-
-                switch (code) {
-                    case 8:
-                        // resize window
-                        if (a > 0 && b > 0) {
-                            this.renderer.setGridSize(b, a);
-                        }
-
-                    default:
-                        console.log(`unknown window manipulation code ${code};${a};${b}`);
-                }
-
-                break;
-            }
-
-            case "CONTROL_SET_TOP_BOTTOM_MARGIN":
-                // TODO: support top/bottom margin
-                this.renderer.setCursor(0, 0);
-                break;
-
-            case "CONTROL_PRIMARY_DEVICE_ATTR":
-                this.source.write(Terminal.PRIMARY_DEVICE_ATTRIBUTE);
-                break;
-
-            case "CONTROL_SECONDARY_DEVICE_ATTR":
-            case "CONTROL_TERTIARY_DEVICE_ATTR":
-                console.log("secondary and tertiary device are not supported by vt100");
-                break;
-
-            default:
-                console.log("ignored", seq);
-        }
-    }
-
     printText (text: string) {
-        console.log("printing", text);
+        // console.log("printing", text);
 
         for (const char of text) {
             if (char == "\n") {
@@ -470,5 +237,214 @@ export class Terminal {
                 }
             }
         }
+    }
+
+    /**
+     * Execute the given control sequence
+     */
+    handleControlSequence (seq: ControlSequence) {
+        const handler = this.controlHandlers[seq.cmd];
+
+        if (typeof handler == "function") {
+            handler(seq);
+            // console.log(seq.toString());
+        } else {
+            // console.log("not implemented", seq);
+        }
+    }
+
+    registerHandler (cmd: string, handler: (seq: ControlSequence) => void) {
+        this.controlHandlers[cmd] = handler;
+    }
+
+    initControlHandlers () {
+        this.registerHandler("CONTROL_OS_CONTROL", seq => {
+            const [ code, param ] = seq.args;
+
+            switch (code) {
+                case 0:
+                    console.log(`title changed to ${param}`);
+                    break;
+
+                default:
+                    console.log(`unsupported os control ${code};${param}`);
+            }
+        });
+
+        this.registerHandler("CONTROL_BACKSPACE", _ => {
+            this.cursorMove(1, "D");
+        });
+
+        this.registerHandler("CONTROL_CURSOR_MOVE", seq => {
+            const [ n, action ] = seq.args;
+            this.cursorMove(n, action);
+        });
+
+        this.registerHandler("CONTROL_DELETE_CHAR", seq => {
+            const [ n ] = seq.args;
+            const { column, row } = this.renderer.getCursor();
+            this.deleteInRow(row, column, column + n - 1);
+        });
+        
+        this.registerHandler("CONTROL_TAB", _ => {
+            this.printText("    ");
+        });
+
+        this.registerHandler("CONTROL_CARRIAGE_RETURN", _ => {
+            const { row } = this.renderer.getCursor();
+            this.renderer.setCursor(0, row);
+        });
+        
+        this.registerHandler("CONTROL_ERASE_IN_DISPLAY", seq => {
+            const [ code ] = seq.args;
+            const { columns, rows } = this.renderer.getGridSize();
+            const { column: cursorColumn, row: cursorRow } = this.renderer.getCursor();
+
+            if (code == 0) {
+                this.eraseInScreen(cursorColumn, cursorRow, columns - 1, rows - 1);
+            } else if (code == 1) {
+                this.eraseInScreen(0, 0, cursorColumn, cursorRow);
+            } else if (code == 2) {
+                // erase entire screen
+                this.eraseInScreen(0, 0, columns - 1, rows - 1);
+            }
+        });
+
+        this.registerHandler("CONTROL_ERASE_IN_LINE", seq => {
+            const [ code ] = seq.args;
+
+            if (code == 0) {
+                const { column, row } = this.renderer.getCursor();
+                this.eraseInRow(row, column, this.renderer.getGridSize().columns - 1);
+            } else {
+                console.log(`unsupported code erase in line ${code}`);
+            }
+        });
+
+        // case "CONTROL_INSERT_LINE": {
+        //     const [ n ] = seq.args;
+        //     const { column, row } = this.renderer.getCursor();
+        //     this.insertLine(row, n);
+
+        //     break;
+        // }
+
+        // TODO: finish this after implementing scroll margins
+        // case "CONTROL_DELETE_LINE": {
+        //     const [ n ] = seq.args;
+        //     const { row } = this.renderer.getCursor();
+        //     break;
+        // }
+
+        this.registerHandler("CONTROL_INSERT_CHAR", seq => {
+            const [ n ] = seq.args;
+            const { column, row } = this.renderer.getCursor();
+            this.insertInRow(row, column, n);
+        });
+
+        this.registerHandler("CONTROL_GRAPHIC_RENDITION", seq => {
+            const newDefault = applySGRAttribute(seq.args, this.renderer.getDefaultBlock());
+            this.renderer.setDefaultBlock(newDefault);
+        });
+
+        this.registerHandler("CONTROL_CURSOR_MOVE_DIRECT", seq => {
+            let [ row, column ] = seq.args;
+
+            row -= 1;
+            column -= 1;
+
+            if (this.renderer.isInRange(column, row)) {
+                this.renderer.setCursor(column, row);
+            }
+        });
+
+        this.registerHandler("CONTROL_SET_RESET_MODE", seq => {
+            const [ mode, action ] = seq.args;
+        
+            const actionsMap: Record<string, () => void> = {
+                "?12h": () => this.renderer.enableCursorBlink(),
+                "?12l": () => this.renderer.disableCursorBlink(),
+                "?25h": () => this.renderer.showCursor(),
+                "?25l": () => this.renderer.hideCursor(),
+                "?1049h": () => this.renderer.useAlternativeScreen(),
+                "?1049l": () => this.renderer.useMainScreen(),
+
+                // turn on/off application cursor keys mode
+                // https://the.earth.li/~sgtatham/putty/0.60/htmldoc/Chapter4.html#config-appcursor
+                "?1h": () => this.input.setApplicationCursorMode(true),
+                "?1l": () => this.input.setApplicationCursorMode(false),
+
+                // "?2004"
+                // bracketed paste mode
+                // https://cirw.in/blog/bracketed-paste
+            };
+
+            const actionHandler = actionsMap[mode + action];
+
+            if (typeof actionHandler == "function") {
+                actionHandler();
+            } else {
+                console.log(`unsupported mode ${mode + action}`);
+            }
+        });
+        
+        this.registerHandler("CONTROL_SAVE_CURSOR", _ => {
+            const { column, row } = this.renderer.getCursor();
+            this.savedCursorColumn = column;
+            this.savedCursorRow = row;
+        });
+
+        this.registerHandler("CONTROL_RESTORE_CURSOR", _ => {
+            if (this.renderer.isInRange(this.savedCursorColumn, this.savedCursorRow)) {
+                this.renderer.setCursor(this.savedCursorColumn, this.savedCursorRow);
+            }
+        });
+
+        this.registerHandler("CONTROL_REVERSE_INDEX", _ => {
+            const { column, row } = this.renderer.getCursor();
+
+            if (row == 0) {
+                // scroll up
+                this.renderer.scroll(-1);
+            } else {
+                this.renderer.setCursor(column, row - 1);
+            }
+        });
+
+        this.registerHandler("CONTROL_REPORT_CURSOR", _ => {
+            const { column, row } = this.renderer.getCursor();
+            this.source.write(`\x1b[${row + 1};${column + 1}R`);
+        });
+
+        this.registerHandler("CONTROL_WINDOW_MANIPULATION", seq => {
+            const [ code, a, b ] = seq.args;
+
+            switch (code) {
+                case 8:
+                    // resize window
+                    if (a > 0 && b > 0) {
+                        this.renderer.setGridSize(b, a);
+                    }
+
+                default:
+                    console.log(`unknown window manipulation code ${code};${a};${b}`);
+            }
+        });
+
+        this.registerHandler("CONTROL_SET_TOP_BOTTOM_MARGIN", _ => {
+            this.renderer.setCursor(0, 0);
+        });
+
+        this.registerHandler("CONTROL_PRIMARY_DEVICE_ATTR", _ => {
+            this.source.write(Terminal.PRIMARY_DEVICE_ATTRIBUTE);
+        });
+
+        this.registerHandler("CONTROL_SECONDARY_DEVICE_ATTR", _ => {
+            console.log("secondary device attributes are not supported by vt100");
+        });
+
+        this.registerHandler("CONTROL_TERTIARY_DEVICE_ATTR", _ => {
+            console.log("tertiary device attributes are not supported by vt100");
+        });
     }
 }

@@ -22,3 +22,12 @@ less
 curl -L https://raw.githubusercontent.com/keroserene/rickrollrc/master/roll.sh | bash
 
 */
+
+
+/**
+ * Performance tuning
+ * 1. applySGRAttributes
+ * 2. frequent calls to printLetter/setBlock
+ * 3. optimize scroll
+ * 4. broken sequences across buffers
+ */
