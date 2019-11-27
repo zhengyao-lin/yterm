@@ -215,8 +215,8 @@ export const ansiControlSequences = [
      * 
      * Not supported currently
      */
-    new ControlDefinition(/\x1b\[(\d*);(\d*)r/, match => {
-        return new ControlSequence("CONTROL_SET_TOP_BOTTOM_MARGIN", [parseInt(match[1] || "0"), parseInt(match[2] || "0")]);
+    new ControlDefinition(/\x1b\[(\d*)(;(\d*))?r/, match => {
+        return new ControlSequence("CONTROL_SET_TOP_BOTTOM_MARGIN", [parseInt(match[1] || "1"), parseInt(match[3] || "-1")]);
     }),
 
     /**

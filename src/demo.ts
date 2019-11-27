@@ -17,6 +17,13 @@ const term = new Terminal(source, renderer, input);
 
 main!.style.background = colorScheme.getSGRBackground(SGRColor.SGR_COLOR_DEFAULT);
 
+const eventLoop = () => {
+    document.getElementById("title")!.innerText = term.getTitle();
+    window.requestAnimationFrame(eventLoop);
+};
+
+eventLoop();
+
 /*
 
 demo:

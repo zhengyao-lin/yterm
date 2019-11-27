@@ -59,9 +59,12 @@ export class CanvasRenderer extends Renderer {
 
     private cursorColumn: number;
     private cursorRow: number;
+
     private cursorIntervalId: NodeJS.Timeout | null;
     private cursorInterval: number;
-    private cursorBlink: boolean;
+    // private cursorBlink: boolean;
+
+    private cursorOn: boolean;
 
     private colorScheme: ColorScheme;
 
@@ -85,7 +88,7 @@ export class CanvasRenderer extends Renderer {
         this.cursorRow = 0;
         this.cursorIntervalId = null;
         this.cursorInterval = CanvasRenderer.DEFAULT_CURSOR_INTERVAL;
-        this.cursorBlink = true;
+        this.cursorOn = false;
 
         this.colorScheme = colorScheme;
 
@@ -99,7 +102,7 @@ export class CanvasRenderer extends Renderer {
         this.renderFrameId = null;
 
         this.setLayout(font, columns, rows);
-        this.showCursor();
+        this.enableCursorBlink();
 
         this.startRender();
     }
@@ -158,7 +161,7 @@ export class CanvasRenderer extends Renderer {
 
         // if the cursor moves and the cursor is not disabled, keep it on
         if (this.cursorIntervalId !== null) {
-            this.blinkCursor(true);
+            this.cursorOn = true;
         }
     }
 
@@ -173,36 +176,27 @@ export class CanvasRenderer extends Renderer {
     }
 
     showCursor () {
-        if (this.cursorIntervalId === null) {
-            let on = true;
-
-            this.cursorIntervalId = setInterval(() => {
-                this.blinkCursor(on || !this.cursorBlink);
-                on = !on;
-            }, this.cursorInterval);
-
-            this.blinkCursor(true);
-        }
+        this.enableCursorBlink();
+        this.cursorOn = true;
     }
 
     hideCursor () {
-        if (this.cursorIntervalId !== null) {
-            clearInterval(this.cursorIntervalId);
-            this.cursorIntervalId = null;
-        }
-
-        this.blinkCursor(false);
+        this.disableCursorBlink();
+        this.cursorOn = false;
     }
 
     enableCursorBlink () {
-        this.cursorBlink = true;
+        if (this.cursorIntervalId === null) {
+            this.cursorIntervalId = setInterval(() => {
+                this.cursorOn = !this.cursorOn;
+            }, this.cursorInterval);
+        }
     }
 
     disableCursorBlink () {
-        this.cursorBlink = false;
-
         if (this.cursorIntervalId !== null) {
-            this.blinkCursor(true);
+            clearInterval(this.cursorIntervalId);
+            this.cursorIntervalId = null;
         }
     }
 
@@ -351,21 +345,6 @@ export class CanvasRenderer extends Renderer {
         this.fontDescent = metrics.actualBoundingBoxDescent;
     }
 
-    private blinkCursor (on: boolean) {
-        const block =
-            this.screen[this.cursorRow][this.cursorColumn] ||
-            this.getDefaultBlock();
-
-        const inverseBlock = block.copy();
-        inverseBlock.reversed = true;
-
-        if (on) {
-            this.renderBlock(inverseBlock, this.cursorColumn, this.cursorRow);
-        } else {
-            this.renderBlock(block, this.cursorColumn, this.cursorRow);
-        }
-    }
-
     /**
      * markRender* functions are used for marking dirty areas
      * but not redrawing immediately
@@ -381,6 +360,21 @@ export class CanvasRenderer extends Renderer {
     /**
      * Render a single block at the given position (column, row)
      */
+    private renderCursor () {
+        const block =
+            this.screen[this.cursorRow][this.cursorColumn] ||
+            this.getDefaultBlock();
+
+        const inverseBlock = block.copy();
+        inverseBlock.reversed = true;
+
+        if (this.cursorOn) {
+            this.renderBlock(inverseBlock, this.cursorColumn, this.cursorRow);
+        } else {
+            this.renderBlock(block, this.cursorColumn, this.cursorRow);
+        }
+    }
+
     private renderBlock (block: Block, column: number, row: number) {
         this.assertIndexInRange(column, row);
         
@@ -470,6 +464,8 @@ export class CanvasRenderer extends Renderer {
                 }
             }
         }
+
+        this.renderCursor();
 
         // clear all dirty marks
         this.dirtyMark = {};

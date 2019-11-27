@@ -22,6 +22,11 @@ export class Terminal {
     private savedCursorColumn: number;
     private savedCursorRow: number;
 
+    private scrollTopMargin: number;
+    private scrollBottomMargin: number;
+
+    private title: string;
+
     private controlHandlers: Record<string, (seq: ControlSequence) => void>;
 
     constructor (source: Source, renderer: Renderer, input: Input) {
@@ -51,19 +56,28 @@ export class Terminal {
         this.savedCursorColumn = -1;
         this.savedCursorRow = -1;
 
+        this.scrollTopMargin = 0;
+        this.scrollBottomMargin = this.renderer.getGridSize().rows - 1;
+
+        this.title = "";
+
         this.controlHandlers = {};
 
         this.initControlHandlers();
     }
 
+    getTitle () {
+        return this.title;
+    }
+
     newline () {
         const { row } = this.renderer.getCursor();
 
-        if (this.renderer.isInRange(0, row + 1)) {
+        if (row + 1 <= this.scrollBottomMargin) {
             this.renderer.setCursor(0, row + 1);
         } else {
-            this.renderer.scroll(1);
-            this.renderer.setCursor(0, row);
+            this.renderer.scroll(1, this.scrollTopMargin, this.scrollBottomMargin);
+            this.renderer.setCursor(0, this.scrollBottomMargin);
         }
     }
 
@@ -196,9 +210,9 @@ export class Terminal {
 
                 const { column, row } = this.renderer.getCursor();
 
-                if (row == 0) {
+                if (row == this.scrollTopMargin) {
                     // scroll up
-                    this.renderer.scroll(-1);
+                    this.renderer.scroll(-1, this.scrollTopMargin, this.scrollBottomMargin);
                 } else {
                     this.renderer.setCursor(column, row - 1);
                 }
@@ -255,7 +269,7 @@ export class Terminal {
 
             switch (code) {
                 case 0:
-                    console.log(`title changed to ${param}`);
+                    this.title = param;
                     break;
 
                 default:
@@ -298,10 +312,15 @@ export class Terminal {
 
         this.registerHandler("CONTROL_ERASE_IN_LINE", seq => {
             const [ code ] = seq.args;
+            const { column, row } = this.renderer.getCursor();
+            const { columns } = this.renderer.getGridSize();
 
             if (code == 0) {
-                const { column, row } = this.renderer.getCursor();
-                this.eraseInRow(row, column, this.renderer.getGridSize().columns - 1);
+                this.eraseInRow(row, column, columns - 1);
+            } else if (code == 1) {
+                this.eraseInRow(row, 0, column);
+            } else if (code == 2) {
+                this.eraseInRow(row, 0, columns - 1);
             } else {
                 console.log(`unsupported code erase in line ${code}`);
             }
@@ -322,13 +341,13 @@ export class Terminal {
         this.registerHandler("CONTROL_INSERT_LINE", seq => {
             const [ n ] = seq.args;
             const { row } = this.renderer.getCursor();
-            this.renderer.insertLine(row, n);
+            this.renderer.scroll(-n, row, this.scrollBottomMargin);
         });
 
         this.registerHandler("CONTROL_DELETE_LINE", seq => {
             const [ n ] = seq.args;
             const { row } = this.renderer.getCursor();
-            this.renderer.deleteLine(row, n);
+            this.renderer.scroll(n, row, this.scrollBottomMargin);
         });
 
         this.registerHandler("CONTROL_GRAPHIC_RENDITION", seq => {
@@ -370,6 +389,7 @@ export class Terminal {
 
             if (typeof actionHandler == "function") {
                 actionHandler();
+                console.log(`set/reset mode ${mode + action}`);
             } else {
                 console.log(`unsupported mode ${mode + action}`);
             }
@@ -383,17 +403,6 @@ export class Terminal {
 
         this.registerHandler("CONTROL_RESTORE_CURSOR", _ => {
             this.renderer.setCursor(this.savedCursorColumn, this.savedCursorRow);
-        });
-
-        this.registerHandler("CONTROL_REVERSE_INDEX", _ => {
-            const { column, row } = this.renderer.getCursor();
-
-            if (row == 0) {
-                // scroll up
-                this.renderer.scroll(-1);
-            } else {
-                this.renderer.setCursor(column, row - 1);
-            }
         });
 
         this.registerHandler("CONTROL_REPORT_CURSOR", _ => {
@@ -416,8 +425,31 @@ export class Terminal {
             }
         });
 
-        this.registerHandler("CONTROL_SET_TOP_BOTTOM_MARGIN", _ => {
-            this.renderer.setCursor(0, 0);
+        this.registerHandler("CONTROL_SET_TOP_BOTTOM_MARGIN", seq => {
+            let [ top, bottom ] = seq.args;
+            const { rows } = this.renderer.getGridSize();
+
+            // console.log(`CONTROL_SET_TOP_BOTTOM_MARGIN ${top};${bottom}`);
+
+            if (top < 1) {
+                top = 1;
+            }
+
+            if (bottom == -1 || bottom > rows) {
+                bottom = rows;
+            }
+
+            if (top < bottom) {
+                this.renderer.setCursor(0, 0);
+
+                top -= 1;
+                bottom -= 1;
+
+                this.scrollTopMargin = top;
+                this.scrollBottomMargin = bottom;
+            } else {
+                console.log(`illegal CONTROL_SET_TOP_BOTTOM_MARGIN arguments ${top};${bottom}`);
+            }
         });
 
         this.registerHandler("CONTROL_PRIMARY_DEVICE_ATTR", _ => {
@@ -430,6 +462,10 @@ export class Terminal {
 
         this.registerHandler("CONTROL_TERTIARY_DEVICE_ATTR", _ => {
             console.log("tertiary device attributes are not supported by vt100");
+        });
+
+        this.registerHandler("CONTROL_ASCII_MODE", _ => {
+            // this currently does nothing until DEC line drawing is implemented
         });
     }
 }
