@@ -60,6 +60,37 @@
                 <div id="main"></div>
             </div>
         </div>
-        <script src="dist/demo.js"></script>
     </body>
+
+    <script src="../dist/yterm.js"></script>
+    <script>
+        const colorScheme = new yterm.TangoColorScheme();
+        const font = new yterm.Font("Ubuntu Mono", 16);
+
+        const main = document.getElementById("main");
+        const renderer = new yterm.CanvasRenderer(main, 80, 24, font, colorScheme);
+        const source = new yterm.WebSocketSource("ws://localhost:3131");
+        const input = new yterm.KeyboardEventInput(document);
+        const term = new yterm.Terminal(source, renderer, input);
+
+        main.style.background = colorScheme.getSGRBackground(yterm.SGRColor.SGR_COLOR_DEFAULT);
+
+        const eventLoop = () => {
+            document.getElementById("title").innerText = term.getTitle();
+            window.requestAnimationFrame(eventLoop);
+        };
+
+        eventLoop();
+
+        /**
+         * demo:
+         * telnet towel.blinkenlights.nl
+         * vi
+         * sl
+         * cmatrix
+         * screenfetch
+         * less
+         * curl -L https://raw.githubusercontent.com/keroserene/rickrollrc/master/roll.sh | bash
+         */
+    </script>
 </html>

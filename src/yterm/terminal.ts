@@ -228,13 +228,13 @@ export class Terminal {
     printText (text: string) {
         // console.log("printing", text);
 
-        for (const char of text) {
-            if (char == "\n") {
+        for (let i = 0; i < text.length; i++) {
+            if (text[i] == "\n") {
                 this.newline();
             } else {
                 const { column, row } = this.renderer.getCursor();
 
-                this.renderer.printLetter(char, column, row);
+                this.renderer.printLetter(text[i], column, row);
 
                 if (!this.renderer.isInRange(column + 1, row)) {
                     this.newline();
