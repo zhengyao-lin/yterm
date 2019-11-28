@@ -8,8 +8,6 @@
         <style>
             body {
                 margin: 0;
-                background: #353b48;
-                color: rgb(240, 240, 240);
                 font-family: monospace;
             }
 
@@ -34,10 +32,11 @@
             }
 
             #main {
-                border: 1px solid #373e4b;
                 border-radius: 15px;
 
-                box-shadow: 0 0 57px 5px rgba(0, 0, 0, 0.3);
+                box-shadow:
+                    0 0 60px 10px rgba(0, 0, 0, 0.2),
+                    0 0 30px 1px rgba(0, 0, 0, 0.05);
 
                 overflow: hidden;
                 padding: 10px;
@@ -59,22 +58,40 @@
             <div id="col">
                 <h3 id="title">yterm</h3>
                 <div id="main"></div>
+                <input id="transition" type="range" style="width: 100%; margin-top: 2em;" min="0" max="1000", value="0"></input>
             </div>
         </div>
     </body>
 
     <script src="../dist/yterm.js"></script>
     <script>
-        const colorScheme = new yterm.TangoColorScheme();
         const font = new yterm.Font("Ubuntu Mono", 16);
+        const schemeA = new yterm.TangoColorScheme();
+        const schemeB = new yterm.TomorrowColorScheme();
+        const schemeMixed = new yterm.TransitionColorScheme(schemeA, schemeB);
+
+        function getTransitionScheme (t) {
+            schemeMixed.setTransition(t);
+            
+            return new yterm.StyleScheme({
+                font: font,
+                colorScheme: schemeMixed,
+            });
+        }
+
+        function updateAmbience (scheme) {
+            main.style.background = scheme.colorScheme.getSGRBackground(yterm.SGRColor.SGR_COLOR_DEFAULT);
+            document.body.style.background = scheme.colorScheme.getSGRBackground(yterm.SGRColor.SGR_COLOR_DEFAULT);
+            document.body.style.color = scheme.colorScheme.getSGRForeground(yterm.SGRColor.SGR_COLOR_DEFAULT);
+        }
 
         const main = document.getElementById("main");
-        const renderer = new yterm.CanvasRenderer(main, 82, 25, font, colorScheme);
+        const transition = document.getElementById("transition");
+    
+        const renderer = new yterm.CanvasRenderer(main, getTransitionScheme(0), 82, 25);
         const source = new yterm.WebSocketSource("ws://localhost:3131");
         const input = new yterm.KeyboardEventInput(document);
         const term = new yterm.Terminal(source, renderer, input);
-
-        main.style.background = colorScheme.getSGRBackground(yterm.SGRColor.SGR_COLOR_DEFAULT);
 
         const eventLoop = () => {
             document.getElementById("title").innerText = term.getTitle();
@@ -82,6 +99,14 @@
         };
 
         eventLoop();
+
+        updateAmbience(getTransitionScheme(0));
+
+        transition.oninput = () => {
+            const scheme = getTransitionScheme(transition.value / 1000);
+            renderer.setStyleScheme(scheme);
+            updateAmbience(scheme);
+        };
 
         /**
          * demo:

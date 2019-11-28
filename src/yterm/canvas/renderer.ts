@@ -1,50 +1,13 @@
-import { assert } from "./utils";
-import { Renderer, Block, Intensity, TextStyle } from "./renderer";
-import { ColorScheme, TangoColorScheme } from "./schemes";
-import { TextMetrics } from "./metrics";
-
-/**
- * Abstraction for font
- */
-export class Font {
-    private family: string;
-    private size: number;
-
-    constructor (family: string, size: number) {
-        this.family = family;
-        this.size = size;
-    }
-
-    getFamily () { return this.family; }
-    getSize () { return this.size; }
-
-    /**
-     * Format a font string usable in convas context
-     * @param {string} style can be italic or normal
-     * @param {string} weight can be bold, lighter, or normal
-     */
-    getContextFont (style = "normal", weight = "normal"): string {
-        return `${style} ${weight} ${this.getSize()}px ${this.getFamily()}`;
-    }
-
-    measure (): TextMetrics {
-        return new TextMetrics(this.family, this.size);
-    }
-}
+import { assert } from "../core/utils";
+import { Renderer, Block, Intensity, TextStyle } from "../core/renderer";
+import { StyleScheme } from "./schemes";
 
 /**
  * A subclass of Renderer that renders the content
  * on a HTML5 canvas
  */
 export class CanvasRenderer extends Renderer {
-    /** Default settings and constants */
-    static BLOCK_SPILL = 0;
-    static DEFAULT_CURSOR_INTERVAL = 700;
-    static DEFAULT_SCHEME = new TangoColorScheme();
-    static DEFAULT_FONT = new Font("Ubuntu Mono", 16);
-    static DEFAULT_FILL_COLOR = "rgba(255, 255, 255, 0.3)";
-
-    private font!: Font;
+    private styleScheme: StyleScheme;
     private width!: number;
     private height!: number;
     private fontWidth!: number;
@@ -72,28 +35,22 @@ export class CanvasRenderer extends Renderer {
     private dirtyAll: boolean; // a flag that overrides the dirtyMark
 
     private cursorIntervalId: NodeJS.Timeout | null;
-    private cursorInterval: number;
     private cursorOn: boolean;
-
-    private colorScheme: ColorScheme;
 
     private renderFrameId: number | null;
 
     constructor (
         parent: HTMLElement,
-        columns = Renderer.DEFAULT_COLUMNS,
-        rows = Renderer.DEFAULT_ROWS,
-        font = CanvasRenderer.DEFAULT_FONT,
-        colorScheme = CanvasRenderer.DEFAULT_SCHEME
+        styleScheme: StyleScheme,
+        ...args: any
     ) {
-        super(columns, rows);
+        super(...args);
 
         // initialize fields
         this.cursorIntervalId = null;
-        this.cursorInterval = CanvasRenderer.DEFAULT_CURSOR_INTERVAL;
         this.cursorOn = false;
 
-        this.colorScheme = colorScheme;
+        this.styleScheme = styleScheme;
 
         this.dirtyMark = {};
         this.dirtyAll = false;
@@ -130,7 +87,7 @@ export class CanvasRenderer extends Renderer {
 
         document.addEventListener("keydown", this.keydownEvent.bind(this));
 
-        this.updateLayout(font, columns, rows);
+        this.updateLayout();
         this.enableCursorBlink();
 
         this.startRender();
@@ -141,7 +98,7 @@ export class CanvasRenderer extends Renderer {
      */
     setSize (columns: number, rows: number) {
         super.setSize(columns, rows);
-        this.updateLayout(this.font, columns, rows);
+        this.updateLayout();
     }
 
     /**
@@ -192,7 +149,7 @@ export class CanvasRenderer extends Renderer {
         if (this.cursorIntervalId === null) {
             this.cursorIntervalId = setInterval(() => {
                 this.cursorOn = !this.cursorOn;
-            }, this.cursorInterval);
+            }, this.styleScheme.cursorInterval);
         }
     }
 
@@ -219,6 +176,14 @@ export class CanvasRenderer extends Renderer {
     useMainScreen () {
         super.useMainScreen();
         this.markRenderAll();
+    }
+
+    /**
+     * Apply a new style scheme, including font, color scheme and other configs
+     */
+    setStyleScheme (styleScheme: StyleScheme) {
+        this.styleScheme = styleScheme;
+        this.updateLayout();
     }
 
     private offsetToGirdPosition (offsetX: number, offsetY: number): { column: number, row: number } {
@@ -455,11 +420,13 @@ export class CanvasRenderer extends Renderer {
     /**
      * Adjust the display according to the grid size and font
      */
-    private updateLayout (font: Font, columns: number, rows: number) {
+    private updateLayout () {
+        const { columns, rows } = this.getSize();
+
         assert(columns > 0 && rows > 0, "grid too small");
 
         // initialize font
-        this.setFont(font);
+        this.updateFont();
 
         this.width = this.fontWidth * columns;
         this.height = this.fontHeight * rows;
@@ -476,15 +443,19 @@ export class CanvasRenderer extends Renderer {
     /**
      * Set font and measure the dimension of the current font
      */
-    private setFont (font: Font) {
-        this.font = font;
-        const metrics = this.font.measure();
+    private updateFont () {
+        const metrics = this.styleScheme.font.measure();
 
         this.fontDescent = metrics.measureMaxDescent();
         this.fontWidth = metrics.measureMaxWidth() + 1;
         this.fontHeight = metrics.measureMaxHeight() + this.fontDescent;
 
-        console.log(this.fontWidth, this.fontHeight, this.fontDescent);
+        // console.log("font metrics", {
+        //     font: this.styleScheme.font,
+        //     width: this.fontWidth,
+        //     height: this.fontHeight,
+        //     descent: this.fontDescent
+        // });
     }
 
     /**
@@ -521,7 +492,6 @@ export class CanvasRenderer extends Renderer {
         
         const x = this.fontWidth * column;
         const y = this.fontHeight * row;
-        const spill = CanvasRenderer.BLOCK_SPILL;
 
         this.textLayerContext.save();
 
@@ -533,14 +503,14 @@ export class CanvasRenderer extends Renderer {
         if (typeof block.background == "string") {
             background = block.background;
         } else {
-            background = this.colorScheme.getSGRBackground(block.background);
+            background = this.styleScheme.colorScheme.getSGRBackground(block.background);
         }
 
         // render foreground
         if (typeof block.foreground == "string") {
             foreground = block.foreground;
         } else {
-            foreground = this.colorScheme.getSGRForeground(block.foreground);
+            foreground = this.styleScheme.colorScheme.getSGRForeground(block.foreground);
         }
 
         // switch background and foregound if reversed
@@ -561,10 +531,10 @@ export class CanvasRenderer extends Renderer {
         }
 
         this.textLayerContext.fillStyle = background;
-        this.textLayerContext.fillRect(x - spill, y - spill, this.fontWidth + 2 * spill, this.fontHeight + 2 * spill);
+        this.textLayerContext.fillRect(x, y, this.fontWidth, this.fontHeight);
 
         this.textLayerContext.fillStyle = foreground;
-        this.textLayerContext.font = this.font.getContextFont(style, weight);
+        this.textLayerContext.font = this.styleScheme.font.getContextFont(style, weight);
         this.textLayerContext.fillText(block.getChar() || "", x, y + this.fontHeight - this.fontDescent);
 
         this.textLayerContext.restore();
@@ -597,7 +567,7 @@ export class CanvasRenderer extends Renderer {
             assert(startRow <= endRow, `invalid start and end row ${startRow}, ${endRow}`);
 
             this.selectionLayerContext.save();
-            this.selectionLayerContext.fillStyle = CanvasRenderer.DEFAULT_FILL_COLOR;
+            this.selectionLayerContext.fillStyle = this.styleScheme.selectionColor;
 
             for (let row = startRow; row <= endRow; row++) {
                 if (row == startRow && row == endRow) {

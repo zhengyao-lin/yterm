@@ -16,8 +16,8 @@ export class TextMetrics {
         this.canvas = document.createElement("canvas");
 
         // setting the dimension to 2 * fontSize in case of any oferflow
-        this.canvas.width = fontSize * 2;
-        this.canvas.height = fontSize * 2;
+        this.canvas.width = fontSize * 1.5;
+        this.canvas.height = fontSize * 1.5;
 
         this.ctx = this.canvas.getContext("2d")!;
     }
@@ -61,7 +61,7 @@ export class TextMetrics {
         
         this.ctx.font = this.getCanvasFont();
         this.ctx.fillStyle = "rgba(255, 255, 255, 255)";
-        this.ctx.fillText(text, this.fontSize, this.fontSize);
+        this.ctx.fillText(text, this.fontSize * 0.5, this.fontSize);
 
         const pixels = this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height).data;
 

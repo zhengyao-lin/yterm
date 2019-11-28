@@ -1,8 +1,8 @@
-import { Source } from "../src/yterm/source";
-import { Renderer, Block } from "../src/yterm/renderer";
-import { UnicodeChar } from "../src/yterm/unicode"
-import { Input } from "../src/yterm/input";
-import { Terminal } from "../src/yterm/terminal";
+import { Source } from "../src/yterm/core/source";
+import { Renderer, Block } from "../src/yterm/core/renderer";
+import { UnicodeChar } from "../src/yterm/core/unicode"
+import { Input } from "../src/yterm/core/input";
+import { Terminal } from "../src/yterm/core/terminal";
 
 import { expect } from "chai";
 

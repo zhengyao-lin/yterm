@@ -1,16 +1,12 @@
-import { SGRColor } from "./renderer";
-
-export interface ColorScheme {
-    getSGRForeground (color: SGRColor): string;
-    getSGRBackground (color: SGRColor): string;
-}
+import { SGRColor } from "../../core/renderer";
+import { ColorPaletteScheme } from "../schemes";
 
 /**
  * A color scheme based on the Tango project
  * http://tango.freedesktop.org/Tango_Icon_Theme_Guidelines
  */
-export class TangoColorScheme implements ColorScheme {
-    static FOREGROUND_PALETTE: Record<number, string> = {
+export class TangoColorScheme extends ColorPaletteScheme {
+    foregroundPalette: Record<SGRColor, string> = {
         [SGRColor.SGR_COLOR_BLACK]: "#2e3436",
         [SGRColor.SGR_COLOR_RED]: "#a40000",
         [SGRColor.SGR_COLOR_GREEN]: "#8ae234",
@@ -22,7 +18,7 @@ export class TangoColorScheme implements ColorScheme {
         [SGRColor.SGR_COLOR_DEFAULT]: "#eeeeec"
     };
 
-    static BACKGROUND_PALETTE: Record<number, string> = {
+    backgroundPalette: Record<SGRColor, string> = {
         [SGRColor.SGR_COLOR_BLACK]: "#2e3436",
         [SGRColor.SGR_COLOR_RED]: "#a40000",
         [SGRColor.SGR_COLOR_GREEN]: "#8ae234",
@@ -31,13 +27,6 @@ export class TangoColorScheme implements ColorScheme {
         [SGRColor.SGR_COLOR_MAGENTA]: "#5c3565",
         [SGRColor.SGR_COLOR_CYAN]: "#3465a4",
         [SGRColor.SGR_COLOR_WHITE]: "#eeeeec",
-        [SGRColor.SGR_COLOR_DEFAULT]: "#2f3640" // "#2e3436"
+        [SGRColor.SGR_COLOR_DEFAULT]: "#2e3436"
     };
-
-    getSGRForeground (color: SGRColor) {
-        return TangoColorScheme.FOREGROUND_PALETTE[color];
-    }
-    getSGRBackground (color: SGRColor) {
-        return TangoColorScheme.BACKGROUND_PALETTE[color];
-    }
 }
