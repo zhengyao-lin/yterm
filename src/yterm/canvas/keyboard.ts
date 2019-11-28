@@ -1,31 +1,4 @@
-/**
- * An abstraction of input
- */
-export class Input {
-    private handlers: Array<(a: string) => void>;
-
-    public applicationCursorMode: boolean;
-
-    constructor () {
-        this.handlers = [];
-        this.applicationCursorMode = false;
-    }
-
-    onInput (handler: (a: string) => void) {
-        this.handlers.push(handler);
-    }
-
-    input (data: string) {
-        for (const handler of this.handlers) {
-            handler(data);
-        }
-    }
-
-    // https://the.earth.li/~sgtatham/putty/0.60/htmldoc/Chapter4.html#config-appcursor
-    setApplicationCursorMode (enable: boolean) {
-        this.applicationCursorMode = enable;
-    }
-};
+import { Input } from "../core/input"
 
 /**
  * Implements an input device based on the keyboard events in browser
@@ -37,10 +10,10 @@ export class KeyboardEventInput extends Input {
         dom.addEventListener("keydown", event => {
             const keyboardEvent = event as KeyboardEvent;
 
-            console.log(keyboardEvent.key, keyboardEvent.charCode, event);
+            // console.log(keyboardEvent.key, keyboardEvent.charCode, event);
 
             const input = (str: string) => {
-                console.log("inputing", str);
+                // console.log("inputing", str);
 
                 this.input(str);
                 
@@ -125,28 +98,33 @@ export class KeyboardEventInput extends Input {
                     break;
 
                 default:
-                    if (keyboardEvent.ctrlKey) {
-                        // https://docs.microsoft.com/en-us/windows/console/console-virtual-terminal-sequences#numpad--function-keys
-                        switch (keyboardEvent.key) {
-                            case "d":
-                                input("\x04");
-                                break;
+                    if (keyboardEvent.ctrlKey && !keyboardEvent.shiftKey && !keyboardEvent.altKey) {
+                        // the full list can be found here
+                        // http://jkorpela.fi/chars/c0.html
+                        const map = "abcdefghijklmnopqrstuvwxyz[\\]^_";
+                        const key = keyboardEvent.key.toLowerCase();
 
-                            case "c":
-                                input("\x03");
-                                break;
+                        if (key.length == 1) {
+                            const index = map.indexOf(key);
 
-                            case "a":
-                                input("\x01");
+                            if (index != -1) {
+                                input(String.fromCharCode(1 + index));
+                            }
+                        }
+                    } else if (keyboardEvent.ctrlKey && keyboardEvent.shiftKey && !keyboardEvent.altKey) {
+                        switch (keyboardEvent.key.toLowerCase()) {
+                            case "v": {
+                                // TODO: investigate compatibility
+                                navigator.clipboard
+                                    .readText()
+                                    .then(text => {
+                                        input(text);
+                                    })
+                                    .catch(err => console.warn(err));
+            
+                                input("");
                                 break;
-
-                            case "e":
-                                input("\x05");
-                                break;
-
-                            case "z":
-                                input("\x1a");
-                                break;
+                            }
                         }
                     } else {
                         input(keyboardEvent.key);

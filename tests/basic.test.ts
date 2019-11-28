@@ -1,13 +1,16 @@
 import { describe, it } from "mocha";
 import { expect } from "chai";
 
-import { fullParser, ControlSequence } from "../src/yterm/control";
+import { fullParser, ControlSequence } from "../src/yterm/core/control";
 
 function parseToChunks (data: string): Array<ControlSequence | string> {
     const chunks: Array<ControlSequence | string> = [];
     const compressedChunks = []; // collapsing consecutive strings together
 
-    fullParser.parseStream(data, chunks.push.bind(chunks));
+    const parser = fullParser();
+
+    parser.onChunk(chunks.push.bind(chunks));
+    parser.pushData(data);
 
     let standingChunk = "";
 

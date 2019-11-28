@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="utf-8" />
+    </head>
+
+    <body>
+        <style>
+            body {
+                margin: 0;
+                font-family: monospace;
+            }
+
+            #container {
+                display: flex;
+                
+                position: absolute;
+                top: 0;
+                left: 0;
+                height: 100%;
+                width: 100%;
+
+                justify-content: center;
+            }
+
+            #col {
+                display: flex;
+                flex-direction: column;
+                justify-content: center;
+                align-items: center;
+                flex: 0 0;
+            }
+
+            #main {
+                border-radius: 15px;
+
+                box-shadow:
+                    0 0 60px 10px rgba(0, 0, 0, 0.2),
+                    0 0 30px 1px rgba(0, 0, 0, 0.05);
+
+                overflow: hidden;
+                padding: 10px;
+            }
+
+            #title {
+                max-width: 90%;
+                text-overflow: ellipsis;
+                overflow: hidden;
+                white-space: nowrap;
+            }
+
+            canvas {
+                vertical-align: bottom;
+                cursor: text;
+            }
+        </style>
+        <div id="container">
+            <div id="col">
+                <h3 id="title">yterm</h3>
+                <div id="main"></div>
+                <input id="transition" type="range" style="width: 100%; margin-top: 2em;" min="0" max="1000", value="0"></input>
+            </div>
+        </div>
+    </body>
+
+    <script src="../dist/yterm.js"></script>
+    <script>
+        const font = new yterm.Font("Ubuntu Mono", 16);
+        const schemeA = new yterm.TangoColorScheme();
+        const schemeB = new yterm.TomorrowColorScheme();
+        const schemeMixed = new yterm.TransitionColorScheme(schemeA, schemeB);
+
+        function getTransitionScheme (t) {
+            schemeMixed.setTransition(t);
+            
+            return new yterm.StyleScheme({
+                font: font,
+                colorScheme: schemeMixed,
+            });
+        }
+
+        function updateAmbience (scheme) {
+            main.style.background = scheme.colorScheme.getSGRBackground(yterm.SGRColor.SGR_COLOR_DEFAULT);
+            document.body.style.background = scheme.colorScheme.getSGRBackground(yterm.SGRColor.SGR_COLOR_DEFAULT);
+            document.body.style.color = scheme.colorScheme.getSGRForeground(yterm.SGRColor.SGR_COLOR_DEFAULT);
+        }
+
+        const main = document.getElementById("main");
+        const transition = document.getElementById("transition");
+    
+        const renderer = new yterm.CanvasRenderer(main, getTransitionScheme(0), 82, 25);
+        const source = new yterm.WebSocketSource("ws://localhost:3131");
+        const input = new yterm.KeyboardEventInput(document);
+        const term = new yterm.Terminal(source, renderer, input);
+
+        const eventLoop = () => {
+            document.getElementById("title").innerText = term.getTitle();
+            window.requestAnimationFrame(eventLoop);
+        };
+
+        eventLoop();
+
+        updateAmbience(getTransitionScheme(0));
+
+        transition.oninput = () => {
+            const scheme = getTransitionScheme(transition.value / 1000);
+            renderer.setStyleScheme(scheme);
+            updateAmbience(scheme);
+        };
+
+        /**
+         * demo:
+         * telnet towel.blinkenlights.nl
+         * vi
+         * sl
+         * cmatrix
+         * screenfetch
+         * less
+         * curl -L https://raw.githubusercontent.com/keroserene/rickrollrc/master/roll.sh | bash
+         */
+    </script>
+</html>

@@ -1,7 +1,7 @@
 import { describe } from "mocha";
 import { itWithTerminal } from "./components";
 
-import { SGRColor, Intensity, BlinkStatus, TextStyle } from "../src/yterm/renderer";
+import { SGRColor, Intensity, BlinkStatus, TextStyle } from "../src/yterm/core/renderer";
 
 describe("Terminal graph rendition", () => {
     itWithTerminal("has the correct default style", 5, 5, (source, renderer, input, term) => {

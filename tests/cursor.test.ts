@@ -33,12 +33,13 @@ describe("Terminal cursor positioning", () => {
         source.send("\x1b[3G");
         renderer.expectCursorAt(2, 0);
 
-        // ignores out of bound requests
+        // out-of-bound requests should be
+        // changed to the nearest position
         source.send("\x1b[10G");
-        renderer.expectCursorAt(2, 0);
+        renderer.expectCursorAt(4, 0);
 
         source.send("\x1b[0G");
-        renderer.expectCursorAt(2, 0);
+        renderer.expectCursorAt(0, 0);
 
         // handles alias correctly
         source.send("\x1b[4`");
@@ -64,7 +65,7 @@ describe("Terminal cursor positioning", () => {
         renderer.expectCursorAt(0, 0);
 
         source.send("\x1b[10d");
-        renderer.expectCursorAt(0, 0);
+        renderer.expectCursorAt(0, 4);
     });
 
     itWithTerminal("handles cursor direct positioning", 5, 5, (source, renderer, input, term) => {
@@ -82,12 +83,14 @@ describe("Terminal cursor positioning", () => {
         source.send("\x1b[3;2H");
         renderer.expectCursorAt(1, 2);
 
-        // ignores out of bound requests
+        // out-of-bound requests
+        // would be set the cursor to
+        // the nearest position
         source.send("\x1b[6;6H");
-        renderer.expectCursorAt(1, 2);
+        renderer.expectCursorAt(4, 4);
 
         source.send("\x1b[0;0H");
-        renderer.expectCursorAt(1, 2);
+        renderer.expectCursorAt(0, 0);
 
         // supports alias for compatibility
         source.send("\x1b[1;1f");
