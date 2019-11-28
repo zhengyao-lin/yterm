@@ -40,7 +40,7 @@ export class KeyboardEventInput extends Input {
             // console.log(keyboardEvent.key, keyboardEvent.charCode, event);
 
             const input = (str: string) => {
-                // console.log("inputing", str);
+                console.log("inputing", str);
 
                 this.input(str);
                 
@@ -125,17 +125,32 @@ export class KeyboardEventInput extends Input {
                     break;
 
                 default:
-                    if (keyboardEvent.ctrlKey) {
+                    if (keyboardEvent.ctrlKey && !keyboardEvent.shiftKey && !keyboardEvent.altKey) {
                         // the full list can be found here
                         // http://jkorpela.fi/chars/c0.html
                         const map = "abcdefghijklmnopqrstuvwxyz[\\]^_";
-                        const key = keyboardEvent.key;
+                        const key = keyboardEvent.key.toLowerCase();
 
                         if (key.length == 1) {
                             const index = map.indexOf(key);
 
                             if (index != -1) {
                                 input(String.fromCharCode(1 + index));
+                            }
+                        }
+                    } else if (keyboardEvent.ctrlKey && keyboardEvent.shiftKey && !keyboardEvent.altKey) {
+                        switch (keyboardEvent.key.toLowerCase()) {
+                            case "v": {
+                                // TODO: investigate compatibility
+                                navigator.clipboard
+                                    .readText()
+                                    .then(text => {
+                                        input(text);
+                                    })
+                                    .catch(err => console.warn(err));
+            
+                                input("");
+                                break;
                             }
                         }
                     } else {

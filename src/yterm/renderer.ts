@@ -486,7 +486,7 @@ export function applySGRAttribute (attrs: Array<SGRAttribute>, block: Block): Bl
                                     color = parse8bitColor(n);
                                     i += 2;
 
-                                    console.log(`decoded 8-bit color: ${color}`);
+                                    // console.log(`decoded 8-bit color: ${color}`);
                                 }
                             }
 
@@ -495,7 +495,7 @@ export function applySGRAttribute (attrs: Array<SGRAttribute>, block: Block): Bl
                 }
 
                 if (color !== null) {
-                    console.log(`decoded color: ${color}`);
+                    // console.log(`decoded color: ${color}`);
 
                     if (attr == SGRAttribute.SGR_FOREGROUND_CUSTOM) {
                         final.foreground = color;

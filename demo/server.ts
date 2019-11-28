@@ -6,8 +6,8 @@ const processes = new Set<IPty>();
 
 server.on("connection", ws => {
     const proc = spawn("bash", [], {
-        cols: 80,
-        rows: 24
+        cols: 82,
+        rows: 25
     });
 
     processes.add(proc);

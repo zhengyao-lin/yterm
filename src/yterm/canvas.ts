@@ -28,6 +28,332 @@ export class Font {
 }
 
 /**
+ * Utility class for text selection
+ */
+class TextSelector {
+    static DEFAULT_FILL_COLOR = "rgba(255, 255, 255, 0.3)";
+
+    private canvasRenderer: CanvasRenderer;
+
+    private selectionLayer: HTMLCanvasElement;
+    private selectionLayerContext: CanvasRenderingContext2D;
+
+    private selectionStart: boolean;
+
+    private startX: number;
+    private startY: number;
+    private endX: number;
+    private endY: number;
+
+    constructor (selectionLayer: HTMLCanvasElement, canvasRenderer: CanvasRenderer) {
+        this.canvasRenderer = canvasRenderer;
+        this.selectionLayer = selectionLayer;
+        this.selectionLayerContext = this.selectionLayer.getContext("2d")!;
+
+        this.selectionStart = false;
+
+        this.startX = 0;
+        this.startY = 0;
+        this.endX = 0;
+        this.endY = 0;
+
+        this.selectionLayer.addEventListener("mousedown", this.mouseDownEvent.bind(this), false);
+        this.selectionLayer.addEventListener("mouseup", this.mouseUpEvent.bind(this), false);
+        this.selectionLayer.addEventListener("mousemove", this.mouseMoveEvent.bind(this), false);
+
+        document.addEventListener("keydown", this.keydownEvent.bind(this));
+
+        this.startRender();
+    }
+
+    private offsetToGirdPosition (offsetX: number, offsetY: number): { column: number, row: number } {
+        const { fontWidth, fontHeight } = this.canvasRenderer.getFontDimensioin();
+
+        const column = Math.floor(offsetX / fontWidth);
+        const row = Math.floor(offsetY / fontHeight);
+
+        return {
+            column, row
+        };
+    }
+
+    /**
+     * Returns position in pixels of the left top corner of a given grid position
+     */
+    private gridPositionToOffset (column: number, row: number): { offsetX: number, offsetY: number } {
+        const { fontWidth, fontHeight } = this.canvasRenderer.getFontDimensioin();
+
+        return {
+            offsetX: column * fontWidth,
+            offsetY: row * fontHeight
+        };
+    }
+
+    private gridPositionToIndex (column: number, row: number): number {
+        const { columns } = this.canvasRenderer.getGridSize();
+        return row * columns + column;
+    }
+
+    private indexToGridPosition (index: number): { column: number, row: number } {
+        const { columns } = this.canvasRenderer.getGridSize();
+        return {
+            column: Math.floor(index) % columns,
+            row: Math.floor(index / columns)
+        };
+    }
+
+    /**
+     * Get the range of selection
+     * returns null if nothing is selected
+     */
+    getSelection (): null | { startColumn: number, startRow: number, endColumn: number, endRow: number } {
+        let { column: startColumn, row: startRow } = this.offsetToGirdPosition(this.startX, this.startY);
+        let { column: endColumn, row: endRow } = this.offsetToGirdPosition(this.endX, this.endY);
+        let startIndex = this.gridPositionToIndex(startColumn, startRow);
+        let endIndex = this.gridPositionToIndex(endColumn, endRow);
+
+        const { fontWidth } = this.canvasRenderer.getFontDimensioin();
+        const halfWidth = fontWidth / 2;
+
+        const { offsetX: startLeftX, offsetY: startTopY } = this.gridPositionToOffset(startColumn, startRow);
+        const { offsetX: endLeftX, offsetY: endTopY } = this.gridPositionToOffset(endColumn, endRow);
+
+        if (startIndex <= endIndex) {
+            // selecting from low index to high index
+
+            // start column is selected iff the cursor is in the left half of the block
+            // end column is selected iff the cursor is in the right half of the block
+            //
+            //  start                 end
+            // --------             --------
+            // |  /\  |     ->      |  /\  |
+            // | x__\ | ........... | /__x |
+            // |/    \|             |/    \|
+            // --------             --------
+
+            // shift start position one unit to the right
+            // if the start offset is in the right half of the block
+            if (this.startX > startLeftX + halfWidth) {
+                const adjusted = this.indexToGridPosition(startIndex + 1);
+                startColumn = adjusted.column;
+                startRow = adjusted.row;
+            }
+
+            // similarly, shift the end position one unit to the left
+            // if the end offset is in the left half of the block
+            if (this.endX < endLeftX + halfWidth) {
+                const adjusted = this.indexToGridPosition(endIndex - 1);
+                endColumn = adjusted.column;
+                endRow = adjusted.row;
+            }
+
+            // update start/end indices
+            startIndex = this.gridPositionToIndex(startColumn, startRow);
+            endIndex = this.gridPositionToIndex(endColumn, endRow);
+
+            // if we actually switched direction, then nothing is selected
+            if (startIndex > endIndex) {
+                return null;
+            } else {
+                // something is selected
+                return {
+                    startColumn,
+                    startRow,
+                    endColumn,
+                    endRow
+                };
+            }
+        } else {
+            // selecting from high index to low index
+            // start column is selected iff the cursor is in the right half of the block
+            // end column is selected iff the cursor is in the left half of the block
+            //
+            //   end                 start
+            // --------             --------
+            // |  /\  |     <-      |  /\  |
+            // | x__\ | ........... | /__x |
+            // |/    \|             |/    \|
+            // --------             --------
+
+            // shift start position one unit to the left
+            // if the start offset is in the left half of the block
+            if (this.startX < startLeftX + halfWidth) {
+                const adjusted = this.indexToGridPosition(startIndex - 1);
+                startColumn = adjusted.column;
+                startRow = adjusted.row;
+            }
+
+            // similarly, shift the end position one unit to the right
+            // if the end offset is in the right half of the block
+            if (this.endX > endLeftX + halfWidth) {
+                const adjusted = this.indexToGridPosition(endIndex + 1);
+                endColumn = adjusted.column;
+                endRow = adjusted.row;
+            }
+
+            // if we actually switched direction, then nothing is selected
+            if (startIndex <= endIndex) {
+                return null;
+            } else {
+                // something is selected
+                return {
+                    startColumn: endColumn,
+                    startRow: endRow,
+                    endColumn: startColumn,
+                    endRow: startRow
+                };
+            }
+        }
+    }
+
+    /**
+     * Extract text from row `row` and [from, to]
+     */
+    lineToText (row: number, from: number, to: number): string {
+        if (from > to) return "";
+
+        let result = "";
+
+        for (let column = from; column <= to; column++) {
+            const block = this.canvasRenderer.getBlock(column, row);
+
+            if (block) {
+                const char = block.getChar();
+
+                if (char !== null) {
+                    result += char;
+                }
+            }
+        }
+
+        return result;
+    }
+
+    /**
+     * Extract text from the current selection
+     */
+    getSelectedText (): string {
+        const selection = this.getSelection();
+        if (selection === null) return "";
+
+        const lines = new Array<string>();
+
+        const { columns } = this.canvasRenderer.getGridSize();
+
+        const {
+            startColumn,
+            startRow,
+            endColumn,
+            endRow
+        } = selection;
+
+        for (let row = startRow; row <= endRow; row++) {
+            if (row == startRow && row == endRow) {
+                lines.push(this.lineToText(row, startColumn, endColumn));
+            } else if (row == startRow) {
+                lines.push(this.lineToText(row, startColumn, columns - 1));
+            } else if (row == endRow) {
+                lines.push(this.lineToText(row, 0, endColumn));
+            } else {
+                lines.push(this.lineToText(row, 0, columns - 1));
+            }
+        }
+
+        return lines.join("\n");
+    }
+
+    private keydownEvent (event: KeyboardEvent) {
+        const preventDefault = () => {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+        };
+
+        if (event.ctrlKey && event.shiftKey && !event.altKey) {
+            switch (event.key.toLowerCase()) {
+                case "c": {
+                    const text = this.getSelectedText();
+                    navigator.clipboard
+                        .writeText(text)
+                        .catch(err => console.warn(err));
+
+                    preventDefault();
+                    break;
+                }
+            }
+        }
+    }
+
+    private mouseDownEvent (event: MouseEvent) {
+        if (!this.selectionStart) {
+            this.selectionStart = true;
+            this.startX = this.endX = event.offsetX;
+            this.startY = this.endY = event.offsetY;
+        }
+    }
+
+    private mouseUpEvent (event: MouseEvent) {
+        this.selectionStart = false;
+    }
+
+    private mouseMoveEvent (event: MouseEvent) {
+        if (this.selectionStart) {
+            this.endX = event.offsetX;
+            this.endY = event.offsetY;
+        }
+    }
+
+    private renderSelection (startColumn: number, startRow: number, endColumn: number, endRow: number) {
+        const { fontWidth, fontHeight } = this.canvasRenderer.getFontDimensioin();
+        const { columns } = this.canvasRenderer.getGridSize();
+
+        assert(startRow <= endRow, "startRow > endRow");
+
+        this.selectionLayerContext.save();
+
+        this.selectionLayerContext.fillStyle = TextSelector.DEFAULT_FILL_COLOR;
+
+        for (let row = startRow; row <= endRow; row++) {
+            if (row == startRow && row == endRow) {
+                // draw a rectangle from start column to the end column
+                const { offsetX, offsetY } = this.gridPositionToOffset(startColumn, row);
+                this.selectionLayerContext.fillRect(offsetX, offsetY, (endColumn + 1 - startColumn) * fontWidth, fontHeight);
+            } else if (row == startRow) {
+                // draw a rectangle from the start column to the end
+                const { offsetX, offsetY } = this.gridPositionToOffset(startColumn, row);
+                this.selectionLayerContext.fillRect(offsetX, offsetY, (columns - startColumn) * fontWidth, fontHeight);
+            } else if (row == endRow) {
+                // draw a rectangle from the start to the end column
+                const { offsetX, offsetY } = this.gridPositionToOffset(endColumn + 1, row);
+                this.selectionLayerContext.fillRect(offsetX, offsetY, (0 - endColumn - 1) * fontWidth, fontHeight);
+            } else {
+                // draw a rectangle across the entire line
+                const { offsetX, offsetY } = this.gridPositionToOffset(0, row);
+                this.selectionLayerContext.fillRect(offsetX, offsetY, columns * fontWidth, fontHeight);
+            }
+        }
+
+        this.selectionLayerContext.restore();
+    }
+
+    /**
+     * Main render loop
+     */
+    private startRender () {
+        const selection = this.getSelection();
+
+        this.selectionLayerContext.clearRect(0, 0, this.selectionLayer.width, this.selectionLayer.height);
+
+        if (selection !== null) {
+            const { startColumn, startRow, endColumn, endRow } = selection;
+            // console.log(selection);
+            this.renderSelection(startColumn, startRow, endColumn, endRow);
+        }
+
+        window.requestAnimationFrame(this.startRender.bind(this));
+    }
+};
+
+/**
  * An implementation of Renderer on HTML canvas
  * @extends Renderer
  */
@@ -38,8 +364,13 @@ export class CanvasRenderer extends Renderer {
     static DEFAULT_SCHEME = new TangoColorScheme();
     static DEFAULT_FONT = new Font("Ubuntu Mono", 16);
 
+    private container: HTMLDivElement;
+
     private textLayer: HTMLCanvasElement;
-    private textContext: CanvasRenderingContext2D;
+    private textLayerContext: CanvasRenderingContext2D;
+
+    private selectionLayer: HTMLCanvasElement;
+    private textSelector: TextSelector;
 
     private font!: Font;
     private width!: number;
@@ -79,11 +410,7 @@ export class CanvasRenderer extends Renderer {
     ) {
         super(columns, rows);
 
-        this.textLayer = document.createElement("canvas");
-        this.textContext = this.textLayer.getContext("2d")!;
-
-        parent.appendChild(this.textLayer);
-
+        // initialize fields
         this.cursorColumn = 0;
         this.cursorRow = 0;
         this.cursorIntervalId = null;
@@ -101,8 +428,25 @@ export class CanvasRenderer extends Renderer {
 
         this.renderFrameId = null;
 
+        // initialize DOM elements
+        this.container = document.createElement("div");
+        this.container.style.position = "relative";
+        parent.appendChild(this.container);
+
+        this.textLayer = document.createElement("canvas");
+        this.textLayerContext = this.textLayer.getContext("2d")!;
+        this.container.appendChild(this.textLayer);
+
+        this.selectionLayer = document.createElement("canvas");
+        this.selectionLayer.style.position = "absolute";
+        this.selectionLayer.style.left = "0";
+        this.selectionLayer.style.top = "0";
+        this.container.appendChild(this.selectionLayer);
+
         this.setLayout(font, columns, rows);
         this.enableCursorBlink();
+
+        this.textSelector = new TextSelector(this.selectionLayer, this);
 
         this.startRender();
     }
@@ -285,6 +629,13 @@ export class CanvasRenderer extends Renderer {
         this.markRenderAll();
     }
 
+    getFontDimensioin (): { fontWidth: number, fontHeight: number } {
+        return {
+            fontWidth: this.fontWidth,
+            fontHeight: this.fontHeight
+        }
+    }
+
     /**
      * Adjust the display according to the grid size and font
      */
@@ -299,6 +650,9 @@ export class CanvasRenderer extends Renderer {
 
         this.textLayer.width = this.width;
         this.textLayer.height = this.height;
+
+        this.selectionLayer.width = this.width;
+        this.selectionLayer.height = this.height;
 
         // reinit screen
         const oldScreen = this.screen;
@@ -334,10 +688,10 @@ export class CanvasRenderer extends Renderer {
      * Set font and measure the dimension of the current font
      */
     private setFont (font: Font) {
-        this.textContext.save();
-        this.textContext.font = font.getContextFont();
-        const metrics = this.textContext.measureText("█");
-        this.textContext.restore();
+        this.textLayerContext.save();
+        this.textLayerContext.font = font.getContextFont();
+        const metrics = this.textLayerContext.measureText("█");
+        this.textLayerContext.restore();
 
         this.font = font;
         this.fontWidth = metrics.width;
@@ -382,7 +736,7 @@ export class CanvasRenderer extends Renderer {
         const y = this.fontHeight * row;
         const spill = CanvasRenderer.BLOCK_SPILL;
 
-        this.textContext.save();
+        this.textLayerContext.save();
 
         block = block || this.getDefaultBlock();
 
@@ -419,14 +773,14 @@ export class CanvasRenderer extends Renderer {
             weight = "lighter";
         }
 
-        this.textContext.fillStyle = background;
-        this.textContext.fillRect(x - spill, y - spill, this.fontWidth + 2 * spill, this.fontHeight + 2 * spill); // add 0.5 to fill the gap
+        this.textLayerContext.fillStyle = background;
+        this.textLayerContext.fillRect(x - spill, y - spill, this.fontWidth + 2 * spill, this.fontHeight + 2 * spill);
 
-        this.textContext.fillStyle = foreground;
-        this.textContext.font = this.font.getContextFont(style, weight);
-        this.textContext.fillText(block.getChar() || "", x, y + this.fontHeight - this.fontDescent);
+        this.textLayerContext.fillStyle = foreground;
+        this.textLayerContext.font = this.font.getContextFont(style, weight);
+        this.textLayerContext.fillText(block.getChar() || "", x, y + this.fontHeight - this.fontDescent);
 
-        this.textContext.restore();
+        this.textLayerContext.restore();
     }
 
     /**

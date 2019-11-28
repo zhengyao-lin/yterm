@@ -52,6 +52,7 @@
 
             canvas {
                 vertical-align: bottom;
+                cursor: text;
             }
         </style>
         <div id="container">
@@ -68,7 +69,7 @@
         const font = new yterm.Font("Ubuntu Mono", 16);
 
         const main = document.getElementById("main");
-        const renderer = new yterm.CanvasRenderer(main, 80, 24, font, colorScheme);
+        const renderer = new yterm.CanvasRenderer(main, 82, 25, font, colorScheme);
         const source = new yterm.WebSocketSource("ws://localhost:3131");
         const input = new yterm.KeyboardEventInput(document);
         const term = new yterm.Terminal(source, renderer, input);

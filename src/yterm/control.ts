@@ -98,7 +98,15 @@ export const ansiControlSequences = [
         return new ControlSequence("CONTROL_SAVE_CURSOR", []);
     }),
 
+    new ControlDefinition(/\x1b\[s/, _ => {
+        return new ControlSequence("CONTROL_SAVE_CURSOR", []);
+    }),
+
     new ControlDefinition(/\x1b8/, _ => {
+        return new ControlSequence("CONTROL_RESTORE_CURSOR", []);
+    }),
+
+    new ControlDefinition(/\x1b\[u/, _ => {
         return new ControlSequence("CONTROL_RESTORE_CURSOR", []);
     }),
 

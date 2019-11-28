@@ -300,6 +300,8 @@ export class Terminal {
             const { columns, rows } = this.renderer.getGridSize();
             const { column: cursorColumn, row: cursorRow } = this.renderer.getCursor();
 
+            console.log("erase in display " + code);
+
             if (code == 0) {
                 this.eraseInScreen(cursorColumn, cursorRow, columns - 1, rows - 1);
             } else if (code == 1) {
@@ -321,8 +323,6 @@ export class Terminal {
                 this.eraseInRow(row, 0, column);
             } else if (code == 2) {
                 this.eraseInRow(row, 0, columns - 1);
-            } else {
-                console.log(`unsupported code erase in line ${code}`);
             }
         });
 
