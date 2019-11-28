@@ -1,6 +1,7 @@
 import { assert } from "./utils";
 import { Renderer, Block, Intensity, TextStyle } from "./renderer";
 import { ColorScheme, TangoColorScheme } from "./schemes";
+import { TextMetrics } from "./metrics";
 
 /**
  * Abstraction for font
@@ -24,6 +25,10 @@ export class Font {
      */
     getContextFont (style = "normal", weight = "normal"): string {
         return `${style} ${weight} ${this.getSize()}px ${this.getFamily()}`;
+    }
+
+    measure (): TextMetrics {
+        return new TextMetrics(this.family, this.size);
     }
 }
 
@@ -306,7 +311,7 @@ class TextSelector {
         const { fontWidth, fontHeight } = this.canvasRenderer.getFontDimensioin();
         const { columns } = this.canvasRenderer.getGridSize();
 
-        assert(startRow <= endRow, "startRow > endRow");
+        assert(startRow <= endRow, `invalid start and end row ${startRow}, ${endRow}`);
 
         this.selectionLayerContext.save();
 
@@ -686,17 +691,17 @@ export class CanvasRenderer extends Renderer {
 
     /**
      * Set font and measure the dimension of the current font
+     * TODO: invetigate compatibility
      */
     private setFont (font: Font) {
-        this.textLayerContext.save();
-        this.textLayerContext.font = font.getContextFont();
-        const metrics = this.textLayerContext.measureText("█");
-        this.textLayerContext.restore();
-
         this.font = font;
-        this.fontWidth = metrics.width;
-        this.fontHeight = metrics.actualBoundingBoxAscent + metrics.actualBoundingBoxDescent;
-        this.fontDescent = metrics.actualBoundingBoxDescent;
+        const metrics = this.font.measure();
+
+        this.fontDescent = metrics.measureMaxDescent();
+        this.fontWidth = metrics.measureMaxWidth() + 1;
+        this.fontHeight = metrics.measureMaxHeight() + this.fontDescent;
+
+        console.log(this.fontWidth, this.fontHeight, this.fontDescent);
     }
 
     /**

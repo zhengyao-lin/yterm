@@ -3,7 +3,8 @@
   "version": "0.0.1",
   "description": "",
   "scripts": {
-    "build": "npx webpack",
+    "build": "npx webpack --mode production",
+    "build-dev": "npx webpack --mode development",
     "test": "npx tsc --noEmit && npx mocha -r ts-node/register tests/**/*.test.ts",
     "coverage": "npx nyc -r text -r lcov -n src -e .ts npm run test",
     "demo": "npx ts-node demo/server.ts"
