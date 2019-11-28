@@ -51,82 +51,17 @@ export class TestSource extends Source {
 }
 
 export class TestRenderer extends Renderer {
-    private cursorColumn: number;
-    private cursorRow: number;
-
-    private screen: Array<Array<Block | null>>;
-
     constructor (columns: number, rows: number) {
         super(columns, rows);
-
-        this.cursorColumn = 0;
-        this.cursorRow = 0;
-
-        this.screen = TestRenderer.newScreen(columns, rows);
-    }
-
-    static newScreen (columns: number, rows: number): Array<Array<Block | null>> {
-        const screen = new Array<Array<Block | null>>(rows);
-
-        for (let i = 0; i < rows; i++) {
-            screen[i] = new Array<Block | null>(columns);
-
-            for (let j = 0; j < rows; j++) {
-                screen[i][j] = null;
-            }
-        }
-
-        return screen;
-    }
-
-    setGridSize (columns: number, rows: number) {
-        super.setGridSize(columns, rows);
-        this.screen = TestRenderer.newScreen(columns, rows);
-    }
-
-    setBlock (block: Block | null, column: number, row: number) {
-        this.assertIndexInRange(column, row);
-        this.screen[row][column] = block;
-    }
-
-    getBlock (column: number, row: number): Block | null {
-        this.assertIndexInRange(column, row);
-        return this.screen[row][column];
-    }
-
-    setCursor (column: number, row: number) {
-        if (column < 0) {
-            column = 0;
-        }
-
-        if (column >= this.columns) {
-            column = this.columns - 1;
-        }
-
-        if (row < 0) {
-            row = 0;
-        }
-
-        if (row >= this.rows) {
-            row = this.rows - 1;
-        }
-        
-        this.cursorColumn = column;
-        this.cursorRow = row;
-    }
-
-    getCursor (): { column: number, row: number } {
-        return {
-            column: this.cursorColumn,
-            row: this.cursorRow
-        }
     }
 
     printScreen () {
-        for (let i = 0; i < this.rows; i++) {
+        const { columns, rows } = this.getSize();
+
+        for (let i = 0; i < rows; i++) {
             let line = "";
 
-            for (let j = 0; j < this.columns; j++) {
+            for (let j = 0; j < columns; j++) {
                 const block = this.getBlock(j, i);
 
                 if (block === null || block.getChar() === null) {
@@ -141,13 +76,14 @@ export class TestRenderer extends Renderer {
     }
 
     expectCursorAt (column: number, row: number) {
-        expect(this.cursorColumn).equals(column);
-        expect(this.cursorRow).equals(row);
+        const pos = this.getCursor();
+        expect(pos.column).equals(column);
+        expect(pos.row).equals(row);
     }
 
     expectLine (column: number, row: number, data: string | Array<UnicodeChar | null>) {
-        this.assertIndexInRange(column, row);
-        this.assertIndexInRange(column + data.length - 1, row);
+        this.assertInRange(column, row);
+        this.assertInRange(column + data.length - 1, row);
 
         let i = column;
 
@@ -170,7 +106,7 @@ export class TestRenderer extends Renderer {
     expectBlockStyle (column: number, row: number,
                       char: UnicodeChar | null,
                       properties: Record<string, any>) {
-        this.assertIndexInRange(column, row);
+        this.assertInRange(column, row);
 
         const block = this.getBlock(column, row);
 

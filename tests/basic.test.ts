@@ -7,8 +7,10 @@ function parseToChunks (data: string): Array<ControlSequence | string> {
     const chunks: Array<ControlSequence | string> = [];
     const compressedChunks = []; // collapsing consecutive strings together
 
-    fullParser.onChunk(chunks.push.bind(chunks));
-    fullParser.pushData(data);
+    const parser = fullParser();
+
+    parser.onChunk(chunks.push.bind(chunks));
+    parser.pushData(data);
 
     let standingChunk = "";
 

@@ -154,6 +154,10 @@ export const ansiControlSequences = [
         return new ControlSequence("CONTROL_DELETE_LINE", [parseInt(match[1] || "1")]);
     }),
 
+    new ControlDefinition(/\x1b\[(\d*)X/, match => {
+        return new ControlSequence("CONTROL_ERASE_CHAR", [parseInt(match[1] || "1")]);
+    }),
+
     /**
      * The integer parameter for the following two sequences are
      *   n = 0 erases from the current cursor position (inclusive) to the end of the line/display
@@ -394,4 +398,4 @@ export class ControlSequenceParser {
 /**
  * Full parser of all currently supported control sequences
  */
-export const fullParser = new ControlSequenceParser(ansiControlSequences.concat(asciiControlSequences));
+export const fullParser = () => new ControlSequenceParser(ansiControlSequences.concat(asciiControlSequences));

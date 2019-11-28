@@ -142,61 +142,281 @@ export class Block {
 }
 
 /**
- * Abstract class for a renderer device
+ * Screen buffer keeps in track of
+ *   1. characters on the screen
+ *   2. cursor position
+ *   3. scroll margins
+ */
+export class ScreenBuffer {
+    private columns: number;
+    private rows: number;
+    private screen: Array<Array<Block | null>>;
+
+    private cursorColumn: number;
+    private cursorRow: number;
+
+    private scrollTopMargin: number;
+    private scrollBottomMargin: number;
+
+    constructor (columns: number, rows: number) {
+        assert(columns > 0 && rows > 0, "non-positive column or row number");
+
+        this.columns = columns;
+        this.rows = rows;
+        this.screen = new Array<Array<Block | null>>(rows);
+
+        for (let row = 0; row < rows; row++) {
+            this.screen[row] = new Array<Block | null>(columns);
+        }
+
+        this.cursorColumn = 0;
+        this.cursorRow = 0;
+
+        this.scrollTopMargin = 0;
+        this.scrollBottomMargin = this.rows - 1;
+    }
+
+    getSize (): { columns: number, rows: number } {
+        return {
+            columns: this.columns,
+            rows: this.rows
+        };
+    }
+
+    isInRange (column: number, row: number): boolean {
+        return column >= 0 && column < this.columns &&
+               row >= 0 && row < this.rows;
+    }
+
+    assertInRange (column: number, row: number) {
+        assert(this.isInRange(column, row), `position (${column}, ${row}) is not in range`);
+    }
+
+    getBlock (column: number, row: number): Block | null {
+        this.assertInRange(column, row);
+
+        // change undefined to null
+        if (this.screen[row][column] === undefined) return null;
+        
+        return this.screen[row][column];
+    }
+
+    setBlock (block: Block | null, column: number, row: number) {
+        this.assertInRange(column, row);
+        this.screen[row][column] = block;
+    }
+
+    getCursor (): { column: number, row: number } {
+        return {
+            column: this.cursorColumn,
+            row: this.cursorRow
+        };
+    }
+
+    setCursor (column: number, row: number) {
+        this.assertInRange(column, row);
+        this.cursorColumn = column;
+        this.cursorRow = row;
+    }
+
+    setScrollMargins (top: number, bottom: number) {
+        this.scrollTopMargin = top;
+        this.scrollBottomMargin = bottom;
+    }
+
+    getScrollMargins (): { top: number, bottom: number } {
+        return {
+            top: this.scrollTopMargin,
+            bottom: this.scrollBottomMargin
+        }
+    }
+
+    /**
+     * Resize the buffer and adjust the cursor position
+     */
+    resize (columns: number, rows: number) {
+        assert(columns > 0 && rows > 0, "non-positive column or row number");
+
+        const newScreen = new Array<Array<Block | null>>(rows);
+
+        for (let row = 0; row < rows; row++) {
+            newScreen[row] = new Array<Block | null>(columns);
+        }
+
+        for (let i = 0; i < rows; i++) {
+            for (let j = 0; j < columns; j++) {
+                if (this.isInRange(j, i)) {
+                    newScreen[i][j] = this.screen[i][j];
+                }
+            }
+        }
+
+        // adjust cursor position
+        if (this.cursorColumn >= columns) {
+            this.cursorColumn = columns - 1;
+        }
+
+        if (this.cursorRow >= rows) {
+            this.cursorRow = rows - 1;
+        }
+
+        this.screen = newScreen;
+
+        this.scrollTopMargin = 0;
+        this.scrollBottomMargin = this.columns;
+    }
+
+    /**
+     * Scroll the screen up or down in the given scroll window ([margin top, margin bottom])
+     * (similar to the definition here https://vt100.net/docs/vt100-ug/chapter3.html#DECSTBM)
+     * @param {number} n integers; positive for scrolling down; negative for scrolling up
+     */
+    scroll (n: number, scrollTopMargin = this.scrollTopMargin, scrollBottomMargin = this.scrollBottomMargin) {
+        this.assertInRange(0, scrollTopMargin);
+        this.assertInRange(0, scrollBottomMargin);
+
+        let scrollUp = false;
+        const scrollWindowRows = scrollBottomMargin - scrollTopMargin + 1;
+
+        if (n == 0) return;
+
+        if (n < 0) {
+            n = -n;
+            scrollUp = true;
+        }
+
+        if (n > scrollWindowRows) {
+            n = scrollWindowRows;
+        }
+
+        if (scrollUp) {
+            // remove the last n rows and insert n new ones in the front
+            this.screen.splice(scrollBottomMargin + 1 - n, n);
+
+            let prepend = new Array<Array<Block | null>>();
+
+            for (let i = 0; i < n; i++) {
+                prepend.push(new Array(this.columns));
+            }
+
+            this.screen.splice(scrollTopMargin, 0, ...prepend);
+        } else {
+            // remove the first n rows and insert n new ones in the back
+            this.screen.splice(scrollTopMargin, n);
+
+            for (let i = 0; i < n; i++) {
+                this.screen.splice(scrollBottomMargin, 0, new Array(this.columns));
+            }
+        }
+    }
+};
+
+/**
+ * Base class for a renderer device
  * This is implemented by CanvasRenderer and TestRenderer
  */
-export abstract class Renderer {
+export class Renderer {
     static DEFAULT_COLUMNS = 80;
     static DEFAULT_ROWS = 24;
     static DEFAULT_BLOCK = new Block();
 
-    protected columns: number;
-    protected rows: number;
+    private currentScreen: ScreenBuffer;
+    private mainScreen: ScreenBuffer | null;
 
     private defaultBlock: Block; // default block is equivalent to a null block
 
     constructor (columns = Renderer.DEFAULT_COLUMNS,
                  rows = Renderer.DEFAULT_ROWS,
                  defaultBlock = Renderer.DEFAULT_BLOCK) {
-        this.columns = columns;
-        this.rows = rows;
+        this.currentScreen = new ScreenBuffer(columns, rows);
+        this.mainScreen = null;
 
         this.defaultBlock = defaultBlock;
     }
 
-    /** The minimum set of interfaces required */
-
-    abstract setBlock (block: Block | null, column: number, row: number): void;
-    abstract getBlock (column: number, row: number): Block | null;
+    setBlock (block: Block | null, column: number, row: number): void {
+        this.assertInRange(column, row);
+        this.currentScreen.setBlock(block, column, row);
+    }
+    
+    getBlock (column: number, row: number): Block | null {
+        this.assertInRange(column, row);
+        return this.currentScreen.getBlock(column, row);
+    }
 
     /**
      * setCursor should follow the following convention:
      * if the position (column, row) exceeds the range
      * setCursor will replace it with the nearest position in range
      */
-    abstract setCursor (column: number, row: number): void;
-    abstract getCursor (): { column: number, row: number };
+    setCursor (column: number, row: number) {
+        const { columns, rows } = this.currentScreen.getSize();
 
-    /* Optional methods */
-    showCursor () {}
-    hideCursor () {}
-    enableCursorBlink () {}
-    disableCursorBlink () {}
+        if (column < 0) {
+            column = 0;
+        }
 
-    useAlternativeScreen () {}
-    useMainScreen () {}
+        if (column >= columns) {
+            column = columns - 1;
+        }
 
-    /** Other utility methods based on the abstract methods above */
-    setGridSize (columns: number, rows: number) {
-        this.columns = columns;
-        this.rows = rows;
+        if (row < 0) {
+            row = 0;
+        }
+
+        if (row >= rows) {
+            row = rows - 1;
+        }
+         
+        this.currentScreen.setCursor(column, row);
+    }
+    
+    getCursor (): { column: number, row: number } {
+        return this.currentScreen.getCursor();
     }
 
-    getGridSize (): { columns: number, rows: number } {
-        return {
-            columns: this.columns,
-            rows: this.rows
+    setScrollMargins (top: number, bottom: number) {
+        this.currentScreen.setScrollMargins(top, bottom);
+    }
+
+    getScrollMargins (): { top: number, bottom: number } {
+        return this.currentScreen.getScrollMargins();
+    }
+    
+    useAlternativeScreen () {
+        const { columns, rows } = this.currentScreen.getSize();
+        
+        if (this.mainScreen === null) {
+            // currently on the main screen
+            this.mainScreen = this.currentScreen;
+            this.currentScreen = new ScreenBuffer(columns, rows);
+        } else {
+            // already on an alternative screen
+            this.currentScreen = new ScreenBuffer(columns, rows);
         }
+
+        const { column, row } = this.mainScreen.getCursor();
+        this.currentScreen.setCursor(column, row);
+    }
+
+    useMainScreen () {
+        if (this.mainScreen !== null) {
+            this.currentScreen = this.mainScreen;
+            this.mainScreen = null;
+        }
+    }
+
+    /** Other utility methods based on the abstract methods above */
+    setSize (columns: number, rows: number) {
+        this.currentScreen.resize(columns, rows);
+        
+        if (this.mainScreen !== null) {
+            this.mainScreen.resize(columns, rows);
+        }
+    }
+
+    getSize (): { columns: number, rows: number } {
+        return this.currentScreen.getSize();
     }
 
     setDefaultBlock (block: Block) {
@@ -208,12 +428,12 @@ export abstract class Renderer {
     }
 
     isInRange (column: number, row: number): boolean {
-        const { columns, rows } = this.getGridSize();
-        return column >= 0 && column < columns && row >= 0 && row < rows;
+        return this.currentScreen.isInRange(column, row);
+
     }
 
-    assertIndexInRange (column: number, row: number) {
-        assert(this.isInRange(column, row), `position (${column}, ${row}) out of bounds`);
+    assertInRange (column: number, row: number) {
+        return this.currentScreen.assertInRange(column, row);
     }
 
     printLetter (letter: UnicodeChar | null, column: number, row: number) {
@@ -224,302 +444,13 @@ export abstract class Renderer {
         }
     }
 
-    sanitizeScrollArguments (
-        n: number,
-        scrollMarginTop: number,
-        scrollMarginBottom: number
-    ): {
-        n: number,
-        scrollUp: boolean,
-        scrollMarginTop: number,
-        scrollMarginBottom: number
-    } {
-        this.assertIndexInRange(0, scrollMarginTop);
-        this.assertIndexInRange(0, scrollMarginBottom);
-
-        let scrollUp = false;
-        const scrollWindowRows = scrollMarginBottom - scrollMarginTop + 1;
-
-        if (n < 0) {
-            n = -n;
-            scrollUp = true;
-        }
-
-        if (n > scrollWindowRows) {
-            n = scrollWindowRows;
-        }
-
-        return {
-            n: n,
-            scrollUp: scrollUp,
-            scrollMarginTop: scrollMarginTop,
-            scrollMarginBottom: scrollMarginBottom
-        }
+    scroll (n: number, ...args: any) {
+        this.currentScreen.scroll(n, ...args);
     }
 
-    /**
-     * Scroll the screen up or down in the given scroll window ([margin top, margin bottom])
-     * (similar to the definition here https://vt100.net/docs/vt100-ug/chapter3.html#DECSTBM)
-     * @param {number} n integers; positive for scrolling down; negative for scrolling up
-     */
-    scroll (_n: number, _scrollMarginTop = 0, _scrollMarginBottom = this.rows - 1) {
-        const { columns } = this.getGridSize();
-        const {
-            n,
-            scrollUp,
-            scrollMarginTop,
-            scrollMarginBottom
-        } = this.sanitizeScrollArguments(_n, _scrollMarginTop, _scrollMarginBottom);
-
-        if (n == 0) return;
-    
-        if (scrollUp) {
-            for (let i = scrollMarginBottom; i >= scrollMarginTop; i--) {
-                for (let j = 0; j < columns; j++) {
-                    if (i < scrollMarginTop + n) {
-                        // clear the first n rows
-                        this.setBlock(null, j, i);
-                    } else {
-                        // move first n rows down by n
-                        this.setBlock(this.getBlock(j, i - n), j, i);
-                    }
-                }
-            }
-        } else {
-            for (let i = scrollMarginTop; i <= scrollMarginBottom; i++) {
-                for (let j = 0; j < columns; j++) {
-                    if (i <= scrollMarginBottom - n) {
-                        // move first (rows - n) rows up by n
-                        this.setBlock(this.getBlock(j, i + n), j, i);
-                    } else {
-                        // clear the rest
-                        this.setBlock(null, j, i);
-                    }
-                }
-            }
-        }
-    }
-
-    /**
-     * Remove `n` lines in the end and insert `n` empty lines at `row`
-     */
-    insertLine (row: number, n: number) {
-        assert(n >= 0, "inserting a negative number of lines");
-        this.scroll(-n, row);
-    }
-
-    /**
-     * Delete `n` lines at `row` add `n` empty lines in the end
-     */
-    deleteLine (row: number, n: number) {
-        assert(n >= 0, "deleting a negative number of lines");
-        this.scroll(n, row);
-    }
-}
-
-function encodeRGB (r: number, g: number, b: number): string {
-    // return "#" + ((r << 16) + (g << 8) + b).toString(16);
-    return `rgb(${r}, ${g}, ${b})`;
-}
-
-function parse8bitColor (n: number): Color {
-    if (0 <= n && n <= 7) {
-        // return the represented color directly
-        return n as SGRColor;
-    }
-
-    if (8 <= n && n <= 15) {
-        // TODO: support high intensity color
-        return (n - 8) as SGRColor;
-    }
-
-    if (16 <= n && n <= 231) {
-        // 6 × 6 × 6 cube (216 colors)
-        // rgb is in base-6
-        const rgb = n - 16;
-        const r = Math.floor(255 / 5 * (rgb / 36));
-        const gb = rgb % 36;
-        const g = Math.floor(255 / 5 * gb / 6);
-        const b = 255 / 5 * (gb % 6);
-
-        return encodeRGB(r, g, b);
-    }
-
-    if (232 <= n && n <= 255) {
-        const grey = Math.round(255 / 23 * (n - 232));
-        return encodeRGB(grey, grey, grey);
-    }
-
-    assert(false, "n not in range [0, 256)");
-    return "";
-}
-
-/**
- * Applies a sequence of SGR attributes to a block
- */
-export function applySGRAttribute (attrs: Array<SGRAttribute>, block: Block): Block {
-    let final = block.copy();
-
-    const attributeHandlerMap: Record<number, () => void> = {
-        [SGRAttribute.SGR_RESET]: () => final = new Block(),
-
-        // intensity settings
-        [SGRAttribute.SGR_HIGH_INTENSITY]:
-            () => final.intensity = Intensity.SGR_INTENSITY_HIGH,
-
-        [SGRAttribute.SGR_LOW_INTENSITY]:
-            () => final.intensity = Intensity.SGR_INTENSITY_LOW,
-
-        [SGRAttribute.SGR_NORMAL_INTENSITY]:
-            () => final.intensity = Intensity.SGR_INTENSITY_NORMAL,
-
-        // style settings
-        [SGRAttribute.SGR_ITALIC_STYLE]:
-            () => final.style = TextStyle.STYLE_ITALIC,
-
-        [SGRAttribute.SGR_NORMAL_STYLE]:
-            () => final.style = TextStyle.STYLE_NORMAL,
-
-        // blink settings
-        [SGRAttribute.SGR_SLOW_BLINK]:
-            () => final.blink = BlinkStatus.BLINK_SLOW,
-
-        [SGRAttribute.SGR_RAPID_BLINK]:
-            () => final.blink = BlinkStatus.BLINK_FAST,
-
-        [SGRAttribute.SGR_BLINK_OFF]:
-            () => final.blink = BlinkStatus.BLINK_NONE,
-
-        // reverse color (switch background & foreground)
-        [SGRAttribute.SGR_REVERSE]:
-            () => final.reversed = true,
-
-        [SGRAttribute.SGR_REVERSE_OFF]:
-            () => final.reversed = false,
-
-        // foreground colors
-        [SGRAttribute.SGR_FOREGROUND_BLACK]:
-            () => final.foreground = SGRColor.SGR_COLOR_BLACK,
-
-        [SGRAttribute.SGR_FOREGROUND_RED]:
-            () => final.foreground = SGRColor.SGR_COLOR_RED,
-
-        [SGRAttribute.SGR_FOREGROUND_GREEN]:
-            () => final.foreground = SGRColor.SGR_COLOR_GREEN,
-
-        [SGRAttribute.SGR_FOREGROUND_YELLOW]:
-            () => final.foreground = SGRColor.SGR_COLOR_YELLOW,
-
-        [SGRAttribute.SGR_FOREGROUND_BLUE]:
-            () => final.foreground = SGRColor.SGR_COLOR_BLUE,
-            
-        [SGRAttribute.SGR_FOREGROUND_MAGENTA]:
-            () => final.foreground = SGRColor.SGR_COLOR_MAGENTA,
-                
-        [SGRAttribute.SGR_FOREGROUND_CYAN]:
-            () => final.foreground = SGRColor.SGR_COLOR_CYAN,
-                
-        [SGRAttribute.SGR_FOREGROUND_WHITE]:
-            () => final.foreground = SGRColor.SGR_COLOR_WHITE,
-            
-        [SGRAttribute.SGR_FOREGROUND_DEFAULT]:
-            () => final.foreground = SGRColor.SGR_COLOR_DEFAULT,
-            
-        // background colors
-        [SGRAttribute.SGR_BACKGROUND_BLACK]:
-            () => final.background = SGRColor.SGR_COLOR_BLACK,
-            
-        [SGRAttribute.SGR_BACKGROUND_RED]:
-            () => final.background = SGRColor.SGR_COLOR_RED,
-            
-        [SGRAttribute.SGR_BACKGROUND_GREEN]:
-            () => final.background = SGRColor.SGR_COLOR_GREEN,
-            
-        [SGRAttribute.SGR_BACKGROUND_YELLOW]:
-            () => final.background = SGRColor.SGR_COLOR_YELLOW,
-            
-        [SGRAttribute.SGR_BACKGROUND_BLUE]:
-            () => final.background = SGRColor.SGR_COLOR_BLUE,
-            
-        [SGRAttribute.SGR_BACKGROUND_MAGENTA]:
-            () => final.background = SGRColor.SGR_COLOR_MAGENTA,
-            
-        [SGRAttribute.SGR_BACKGROUND_CYAN]:
-            () => final.background = SGRColor.SGR_COLOR_CYAN,
-            
-        [SGRAttribute.SGR_BACKGROUND_WHITE]:
-            () => final.background = SGRColor.SGR_COLOR_WHITE,
-            
-        [SGRAttribute.SGR_BACKGROUND_DEFAULT]:
-            () => final.background = SGRColor.SGR_COLOR_DEFAULT,
-    };
-
-    for (let i = 0; i < attrs.length; i++) {
-        const attr = attrs[i];
-
-        switch (attr) {
-            case SGRAttribute.SGR_FOREGROUND_CUSTOM:
-            case SGRAttribute.SGR_BACKGROUND_CUSTOM: {
-                let color = null;
-
-                if (i + 1 < attrs.length) {
-                    switch (attrs[i + 1]) {
-                        case 2: // 2;r;g;b
-                            if (i + 4 < attrs.length) {
-                                const [ r, g, b ] = attrs.slice(i + 2, i + 5);
-
-                                if (0 <= r && r < 256 &&
-                                    0 <= g && g < 256 &&
-                                    0 <= b && b < 256) {
-                                    color = encodeRGB(r, g, b);
-                                    i += 4;
-                                }
-                            }
-
-                            break;
-
-                        case 5: // 5;n https://en.wikipedia.org/wiki/ANSI_escape_code#8-bit
-                            if (i + 2 < attrs.length) {
-                                const n = attrs[i + 2];
-                                
-                                if (0 <= n && n < 256) {
-                                    color = parse8bitColor(n);
-                                    i += 2;
-
-                                    // console.log(`decoded 8-bit color: ${color}`);
-                                }
-                            }
-
-                            break;
-                    }
-                }
-
-                if (color !== null) {
-                    // console.log(`decoded color: ${color}`);
-
-                    if (attr == SGRAttribute.SGR_FOREGROUND_CUSTOM) {
-                        final.foreground = color;
-                    } else {
-                        final.background = color;
-                    }
-
-                    break;
-                }
-
-                console.log("ill formatted custom color rendition command");
-            }
-
-            default: {
-                const handler = attributeHandlerMap[attr];
-
-                if (typeof handler == "function") {
-                    handler();
-                } else {
-                    console.log(`SGR attribute ${attr} not implemented`);
-                }
-            }
-        }
-    }
-
-    return final;
+    /* Optional methods */
+    showCursor () {}
+    hideCursor () {}
+    enableCursorBlink () {}
+    disableCursorBlink () {}
 }

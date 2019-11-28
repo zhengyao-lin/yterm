@@ -40,7 +40,7 @@ export class KeyboardEventInput extends Input {
             // console.log(keyboardEvent.key, keyboardEvent.charCode, event);
 
             const input = (str: string) => {
-                console.log("inputing", str);
+                // console.log("inputing", str);
 
                 this.input(str);
                 

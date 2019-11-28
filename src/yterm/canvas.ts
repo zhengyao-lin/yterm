@@ -33,26 +33,88 @@ export class Font {
 }
 
 /**
- * Utility class for text selection
+ * A subclass of Renderer that renders the content
+ * on a HTML5 canvas
  */
-class TextSelector {
+export class CanvasRenderer extends Renderer {
+    /** Default settings and constants */
+    static BLOCK_SPILL = 0;
+    static DEFAULT_CURSOR_INTERVAL = 700;
+    static DEFAULT_SCHEME = new TangoColorScheme();
+    static DEFAULT_FONT = new Font("Ubuntu Mono", 16);
     static DEFAULT_FILL_COLOR = "rgba(255, 255, 255, 0.3)";
 
-    private canvasRenderer: CanvasRenderer;
+    private font!: Font;
+    private width!: number;
+    private height!: number;
+    private fontWidth!: number;
+    private fontHeight!: number;
+    private fontDescent!: number;
+
+    // DOM related fields
+    private container: HTMLDivElement;
+
+    private textLayer: HTMLCanvasElement;
+    private textLayerContext: CanvasRenderingContext2D;
 
     private selectionLayer: HTMLCanvasElement;
     private selectionLayerContext: CanvasRenderingContext2D;
 
+    // selection
     private selectionStart: boolean;
-
     private startX: number;
     private startY: number;
     private endX: number;
     private endY: number;
 
-    constructor (selectionLayer: HTMLCanvasElement, canvasRenderer: CanvasRenderer) {
-        this.canvasRenderer = canvasRenderer;
-        this.selectionLayer = selectionLayer;
+    // marking the dirty area that needs to be redrawn
+    private dirtyMark: Record<string, boolean>;
+    private dirtyAll: boolean; // a flag that overrides the dirtyMark
+
+    private cursorIntervalId: NodeJS.Timeout | null;
+    private cursorInterval: number;
+    private cursorOn: boolean;
+
+    private colorScheme: ColorScheme;
+
+    private renderFrameId: number | null;
+
+    constructor (
+        parent: HTMLElement,
+        columns = Renderer.DEFAULT_COLUMNS,
+        rows = Renderer.DEFAULT_ROWS,
+        font = CanvasRenderer.DEFAULT_FONT,
+        colorScheme = CanvasRenderer.DEFAULT_SCHEME
+    ) {
+        super(columns, rows);
+
+        // initialize fields
+        this.cursorIntervalId = null;
+        this.cursorInterval = CanvasRenderer.DEFAULT_CURSOR_INTERVAL;
+        this.cursorOn = false;
+
+        this.colorScheme = colorScheme;
+
+        this.dirtyMark = {};
+        this.dirtyAll = false;
+
+        this.renderFrameId = null;
+
+        // initialize DOM elements
+        this.container = document.createElement("div");
+        this.container.style.position = "relative";
+        parent.appendChild(this.container);
+
+        this.textLayer = document.createElement("canvas");
+        this.textLayerContext = this.textLayer.getContext("2d")!;
+        this.container.appendChild(this.textLayer);
+
+        this.selectionLayer = document.createElement("canvas");
+        this.selectionLayer.style.position = "absolute";
+        this.selectionLayer.style.left = "0";
+        this.selectionLayer.style.top = "0";
+        this.container.appendChild(this.selectionLayer);
+
         this.selectionLayerContext = this.selectionLayer.getContext("2d")!;
 
         this.selectionStart = false;
@@ -68,14 +130,100 @@ class TextSelector {
 
         document.addEventListener("keydown", this.keydownEvent.bind(this));
 
+        this.updateLayout(font, columns, rows);
+        this.enableCursorBlink();
+
         this.startRender();
     }
 
-    private offsetToGirdPosition (offsetX: number, offsetY: number): { column: number, row: number } {
-        const { fontWidth, fontHeight } = this.canvasRenderer.getFontDimensioin();
+    /**
+     * Set the grid size of the terminal
+     */
+    setSize (columns: number, rows: number) {
+        super.setSize(columns, rows);
+        this.updateLayout(this.font, columns, rows);
+    }
 
-        const column = Math.floor(offsetX / fontWidth);
-        const row = Math.floor(offsetY / fontHeight);
+    /**
+     * Set a particular block
+     * @param block can be null
+     */
+    setBlock (block: Block | null, column: number, row: number) {
+        super.setBlock(block, column, row);
+        this.markRenderChar(column, row);
+    }
+
+    /**
+     * Set the position of the cursor
+     */
+    setCursor (column: number, row: number) {
+        const { column: oldCursorColumn, row: oldCursorRow } = this.getCursor();
+        
+        super.setCursor(column, row);
+
+        const { column: cursorColumn, row: cursorRow } = this.getCursor();
+
+        // restore the original cursor block
+        this.markRenderChar(oldCursorColumn, oldCursorRow);
+        this.markRenderChar(cursorColumn, cursorRow);
+
+        // if the cursor moves and the cursor is not disabled, keep it on
+        if (this.cursorIntervalId !== null) {
+            this.cursorOn = true;
+        }
+    }
+
+    scroll (n: number, ...args: any) {
+        super.scroll(n, ...args);
+        this.markRenderAll();
+    }
+
+    showCursor () {
+        this.enableCursorBlink();
+        this.cursorOn = true;
+    }
+
+    hideCursor () {
+        this.disableCursorBlink();
+        this.cursorOn = false;
+    }
+
+    enableCursorBlink () {
+        if (this.cursorIntervalId === null) {
+            this.cursorIntervalId = setInterval(() => {
+                this.cursorOn = !this.cursorOn;
+            }, this.cursorInterval);
+        }
+    }
+
+    disableCursorBlink () {
+        if (this.cursorIntervalId !== null) {
+            clearInterval(this.cursorIntervalId);
+            this.cursorIntervalId = null;
+        }
+    }
+
+    /**
+     * Switch to an alternative screen buffer.
+     * This function will clear the alternative screen before switching.
+     */
+    useAlternativeScreen () {
+        super.useAlternativeScreen();
+        this.markRenderAll();
+    }
+
+    /**
+     * Switch back to the original main screen.
+     * Only usable when the current screen is an alternative one.
+     */
+    useMainScreen () {
+        super.useMainScreen();
+        this.markRenderAll();
+    }
+
+    private offsetToGirdPosition (offsetX: number, offsetY: number): { column: number, row: number } {
+        const column = Math.floor(offsetX / this.fontWidth);
+        const row = Math.floor(offsetY / this.fontHeight);
 
         return {
             column, row
@@ -86,21 +234,19 @@ class TextSelector {
      * Returns position in pixels of the left top corner of a given grid position
      */
     private gridPositionToOffset (column: number, row: number): { offsetX: number, offsetY: number } {
-        const { fontWidth, fontHeight } = this.canvasRenderer.getFontDimensioin();
-
         return {
-            offsetX: column * fontWidth,
-            offsetY: row * fontHeight
+            offsetX: column * this.fontWidth,
+            offsetY: row * this.fontHeight
         };
     }
 
     private gridPositionToIndex (column: number, row: number): number {
-        const { columns } = this.canvasRenderer.getGridSize();
+        const { columns } = this.getSize();
         return row * columns + column;
     }
 
     private indexToGridPosition (index: number): { column: number, row: number } {
-        const { columns } = this.canvasRenderer.getGridSize();
+        const { columns } = this.getSize();
         return {
             column: Math.floor(index) % columns,
             row: Math.floor(index / columns)
@@ -111,14 +257,13 @@ class TextSelector {
      * Get the range of selection
      * returns null if nothing is selected
      */
-    getSelection (): null | { startColumn: number, startRow: number, endColumn: number, endRow: number } {
+    private getSelection (): null | { startColumn: number, startRow: number, endColumn: number, endRow: number } {
         let { column: startColumn, row: startRow } = this.offsetToGirdPosition(this.startX, this.startY);
         let { column: endColumn, row: endRow } = this.offsetToGirdPosition(this.endX, this.endY);
         let startIndex = this.gridPositionToIndex(startColumn, startRow);
         let endIndex = this.gridPositionToIndex(endColumn, endRow);
 
-        const { fontWidth } = this.canvasRenderer.getFontDimensioin();
-        const halfWidth = fontWidth / 2;
+        const halfWidth = this.fontWidth / 2;
 
         const { offsetX: startLeftX, offsetY: startTopY } = this.gridPositionToOffset(startColumn, startRow);
         const { offsetX: endLeftX, offsetY: endTopY } = this.gridPositionToOffset(endColumn, endRow);
@@ -214,13 +359,13 @@ class TextSelector {
     /**
      * Extract text from row `row` and [from, to]
      */
-    lineToText (row: number, from: number, to: number): string {
+    private lineToText (row: number, from: number, to: number): string {
         if (from > to) return "";
 
         let result = "";
 
         for (let column = from; column <= to; column++) {
-            const block = this.canvasRenderer.getBlock(column, row);
+            const block = this.getBlock(column, row);
 
             if (block) {
                 const char = block.getChar();
@@ -237,13 +382,13 @@ class TextSelector {
     /**
      * Extract text from the current selection
      */
-    getSelectedText (): string {
+    private getSelectedText (): string {
         const selection = this.getSelection();
         if (selection === null) return "";
 
         const lines = new Array<string>();
 
-        const { columns } = this.canvasRenderer.getGridSize();
+        const { columns } = this.getSize();
 
         const {
             startColumn,
@@ -307,344 +452,10 @@ class TextSelector {
         }
     }
 
-    private renderSelection (startColumn: number, startRow: number, endColumn: number, endRow: number) {
-        const { fontWidth, fontHeight } = this.canvasRenderer.getFontDimensioin();
-        const { columns } = this.canvasRenderer.getGridSize();
-
-        assert(startRow <= endRow, `invalid start and end row ${startRow}, ${endRow}`);
-
-        this.selectionLayerContext.save();
-
-        this.selectionLayerContext.fillStyle = TextSelector.DEFAULT_FILL_COLOR;
-
-        for (let row = startRow; row <= endRow; row++) {
-            if (row == startRow && row == endRow) {
-                // draw a rectangle from start column to the end column
-                const { offsetX, offsetY } = this.gridPositionToOffset(startColumn, row);
-                this.selectionLayerContext.fillRect(offsetX, offsetY, (endColumn + 1 - startColumn) * fontWidth, fontHeight);
-            } else if (row == startRow) {
-                // draw a rectangle from the start column to the end
-                const { offsetX, offsetY } = this.gridPositionToOffset(startColumn, row);
-                this.selectionLayerContext.fillRect(offsetX, offsetY, (columns - startColumn) * fontWidth, fontHeight);
-            } else if (row == endRow) {
-                // draw a rectangle from the start to the end column
-                const { offsetX, offsetY } = this.gridPositionToOffset(endColumn + 1, row);
-                this.selectionLayerContext.fillRect(offsetX, offsetY, (0 - endColumn - 1) * fontWidth, fontHeight);
-            } else {
-                // draw a rectangle across the entire line
-                const { offsetX, offsetY } = this.gridPositionToOffset(0, row);
-                this.selectionLayerContext.fillRect(offsetX, offsetY, columns * fontWidth, fontHeight);
-            }
-        }
-
-        this.selectionLayerContext.restore();
-    }
-
-    /**
-     * Main render loop
-     */
-    private startRender () {
-        const selection = this.getSelection();
-
-        this.selectionLayerContext.clearRect(0, 0, this.selectionLayer.width, this.selectionLayer.height);
-
-        if (selection !== null) {
-            const { startColumn, startRow, endColumn, endRow } = selection;
-            // console.log(selection);
-            this.renderSelection(startColumn, startRow, endColumn, endRow);
-        }
-
-        window.requestAnimationFrame(this.startRender.bind(this));
-    }
-};
-
-/**
- * An implementation of Renderer on HTML canvas
- * @extends Renderer
- */
-export class CanvasRenderer extends Renderer {
-    /** Default settings and constants */
-    static BLOCK_SPILL = 0;
-    static DEFAULT_CURSOR_INTERVAL = 700;
-    static DEFAULT_SCHEME = new TangoColorScheme();
-    static DEFAULT_FONT = new Font("Ubuntu Mono", 16);
-
-    private container: HTMLDivElement;
-
-    private textLayer: HTMLCanvasElement;
-    private textLayerContext: CanvasRenderingContext2D;
-
-    private selectionLayer: HTMLCanvasElement;
-    private textSelector: TextSelector;
-
-    private font!: Font;
-    private width!: number;
-    private height!: number;
-    private fontWidth!: number;
-    private fontHeight!: number;
-    private fontDescent!: number;
-
-    private screen!: Array<Array<Block | null>>;
-    private mainScreen: Array<Array<Block | null>> | null;
-    private mainScreenCursorColumn: number;
-    private mainScreenCursorRow: number;
-
-    // marking the dirty area that needs to be redrawn
-    private dirtyMark: Record<string, boolean>;
-    private dirtyAll: boolean; // a flag that overrides the dirtyMark
-
-    private cursorColumn: number;
-    private cursorRow: number;
-
-    private cursorIntervalId: NodeJS.Timeout | null;
-    private cursorInterval: number;
-    // private cursorBlink: boolean;
-
-    private cursorOn: boolean;
-
-    private colorScheme: ColorScheme;
-
-    private renderFrameId: number | null;
-
-    constructor (
-        parent: HTMLElement,
-        columns = Renderer.DEFAULT_COLUMNS,
-        rows = Renderer.DEFAULT_ROWS,
-        font = CanvasRenderer.DEFAULT_FONT,
-        colorScheme = CanvasRenderer.DEFAULT_SCHEME
-    ) {
-        super(columns, rows);
-
-        // initialize fields
-        this.cursorColumn = 0;
-        this.cursorRow = 0;
-        this.cursorIntervalId = null;
-        this.cursorInterval = CanvasRenderer.DEFAULT_CURSOR_INTERVAL;
-        this.cursorOn = false;
-
-        this.colorScheme = colorScheme;
-
-        this.mainScreen = null;
-        this.mainScreenCursorColumn = 0;
-        this.mainScreenCursorRow = 0;
-
-        this.dirtyMark = {};
-        this.dirtyAll = false;
-
-        this.renderFrameId = null;
-
-        // initialize DOM elements
-        this.container = document.createElement("div");
-        this.container.style.position = "relative";
-        parent.appendChild(this.container);
-
-        this.textLayer = document.createElement("canvas");
-        this.textLayerContext = this.textLayer.getContext("2d")!;
-        this.container.appendChild(this.textLayer);
-
-        this.selectionLayer = document.createElement("canvas");
-        this.selectionLayer.style.position = "absolute";
-        this.selectionLayer.style.left = "0";
-        this.selectionLayer.style.top = "0";
-        this.container.appendChild(this.selectionLayer);
-
-        this.setLayout(font, columns, rows);
-        this.enableCursorBlink();
-
-        this.textSelector = new TextSelector(this.selectionLayer, this);
-
-        this.startRender();
-    }
-
-    /**
-     * Set the grid size of the terminal
-     */
-    setGridSize (columns: number, rows: number) {
-        super.setGridSize(columns, rows);
-        this.setLayout(this.font, columns, rows);
-    }
-
-    /**
-     * Set a particular block
-     * @param block can be null
-     */
-    setBlock (block: Block | null, column: number, row: number) {
-        this.assertIndexInRange(column, row);
-        this.screen[row][column] = block;
-        this.markRenderChar(column, row);
-    }
-
-    /**
-     * Reads a block
-     */
-    getBlock (column: number, row: number) {
-        this.assertIndexInRange(column, row);
-        return this.screen[row][column];
-    }
-
-    /**
-     * Set the position of the cursor
-     */
-    setCursor (column: number, row: number) {
-        if (column < 0) {
-            column = 0;
-        }
-
-        if (column >= this.columns) {
-            column = this.columns - 1;
-        }
-
-        if (row < 0) {
-            row = 0;
-        }
-
-        if (row >= this.rows) {
-            row = this.rows - 1;
-        }
-
-        // restore the original cursor block
-        this.markRenderChar(this.cursorColumn, this.cursorRow);
-         
-        this.cursorColumn = column;
-        this.cursorRow = row;
-
-        // if the cursor moves and the cursor is not disabled, keep it on
-        if (this.cursorIntervalId !== null) {
-            this.cursorOn = true;
-        }
-    }
-
-    /**
-     * Get the current position of the cursor
-     */
-    getCursor (): { column: number, row: number } {
-        return {
-            column: this.cursorColumn,
-            row: this.cursorRow
-        }
-    }
-
-    showCursor () {
-        this.enableCursorBlink();
-        this.cursorOn = true;
-    }
-
-    hideCursor () {
-        this.disableCursorBlink();
-        this.cursorOn = false;
-    }
-
-    enableCursorBlink () {
-        if (this.cursorIntervalId === null) {
-            this.cursorIntervalId = setInterval(() => {
-                this.cursorOn = !this.cursorOn;
-            }, this.cursorInterval);
-        }
-    }
-
-    disableCursorBlink () {
-        if (this.cursorIntervalId !== null) {
-            clearInterval(this.cursorIntervalId);
-            this.cursorIntervalId = null;
-        }
-    }
-
-    /**
-     * Switch to an alternative screen buffer.
-     * This function will clear the alternative screen before switching.
-     */
-    useAlternativeScreen () {
-        if (this.mainScreen === null) {
-             // save the current screen
-            this.mainScreen = this.screen;
-        } // else already in the alternative screen
-
-        // create a new screen of the same size
-        this.screen = new Array<Array<Block>>(this.rows);
-
-        for (let i = 0; i < this.rows; i++) {
-            this.screen[i] = new Array<Block>(this.columns);
-        }
-
-        const pos = this.getCursor();
-        this.mainScreenCursorColumn = pos.column;
-        this.mainScreenCursorRow = pos.row;
-        
-        this.setCursor(0, 0);
-
-        this.markRenderAll();
-    }
-
-    /**
-     * Switch back to the original main screen.
-     * Only usable when the current screen is an alternative one.
-     */
-    useMainScreen () {
-        if (this.mainScreen) {
-            this.screen = this.mainScreen;
-            
-            // reset screen since there might be grid changes
-            // when we are in the alternative screen
-            this.setLayout(this.font, this.screen[0].length, this.screen.length);
-
-            this.mainScreen = null;
-
-            this.setCursor(this.mainScreenCursorColumn, this.mainScreenCursorRow);
-
-            this.markRenderAll();
-        } // else already in the main screen
-    }
-
-    /**
-     * A after supplement for the same interface
-     */
-    scroll (_n: number, _scrollMarginTop = 0, _scrollMarginBottom = this.rows - 1) {
-        const { columns, rows } = this.getGridSize();
-        const {
-            n,
-            scrollUp,
-            scrollMarginTop,
-            scrollMarginBottom
-        } = this.sanitizeScrollArguments(_n, _scrollMarginTop, _scrollMarginBottom);
-
-        const scrollWindowRows = scrollMarginBottom - scrollMarginTop + 1;
-
-        if (n == 0) return;
-
-        if (scrollUp) {
-            // remove the last n rows and insert n new ones in the front
-            this.screen.splice(scrollMarginBottom + 1 - n, n);
-
-            let prepend = new Array<Array<Block | null>>();
-
-            for (let i = 0; i < n; i++) {
-                prepend.push(new Array(columns));
-            }
-
-            this.screen.splice(scrollMarginTop, 0, ...prepend);
-        } else {
-            // remove the first n rows and insert n new ones in the back
-            this.screen.splice(scrollMarginTop, n);
-
-            for (let i = 0; i < n; i++) {
-                this.screen.splice(scrollMarginBottom, 0, new Array(columns));
-            }
-        }
-
-        this.markRenderAll();
-    }
-
-    getFontDimensioin (): { fontWidth: number, fontHeight: number } {
-        return {
-            fontWidth: this.fontWidth,
-            fontHeight: this.fontHeight
-        }
-    }
-
     /**
      * Adjust the display according to the grid size and font
      */
-    private setLayout (font: Font, columns: number, rows: number) {
+    private updateLayout (font: Font, columns: number, rows: number) {
         assert(columns > 0 && rows > 0, "grid too small");
 
         // initialize font
@@ -659,39 +470,11 @@ export class CanvasRenderer extends Renderer {
         this.selectionLayer.width = this.width;
         this.selectionLayer.height = this.height;
 
-        // reinit screen
-        const oldScreen = this.screen;
-
-        const newScreen = new Array<Array<Block>>(this.rows);
-
-        for (let i = 0; i < this.rows; i++) {
-            newScreen[i] = new Array<Block>(this.columns);
-        }
-
-        this.screen = newScreen;
-
-        for (let i = 0; i < rows; i++) {
-            for (let j = 0; j < columns; j++) {
-                if (oldScreen !== undefined &&
-                    oldScreen[i] !== undefined &&
-                    oldScreen[i][j] !== undefined) {
-                    this.screen[i][j] = oldScreen[i][j];
-                }
-            }
-        }
-
-        if (!this.isInRange(this.cursorColumn, this.cursorRow)) {
-            this.cursorColumn = 0;
-            this.cursorRow = 0;
-            this.hideCursor();
-        }
-
         this.markRenderAll();
     }
 
     /**
      * Set font and measure the dimension of the current font
-     * TODO: invetigate compatibility
      */
     private setFont (font: Font) {
         this.font = font;
@@ -720,22 +503,21 @@ export class CanvasRenderer extends Renderer {
      * Render a single block at the given position (column, row)
      */
     private renderCursor () {
-        const block =
-            this.screen[this.cursorRow][this.cursorColumn] ||
-            this.getDefaultBlock();
+        const { column, row } = this.getCursor();
+        const block = this.getBlock(column, row) || this.getDefaultBlock();
 
         const inverseBlock = block.copy();
         inverseBlock.reversed = true;
 
         if (this.cursorOn) {
-            this.renderBlock(inverseBlock, this.cursorColumn, this.cursorRow);
+            this.renderBlock(inverseBlock, column, row);
         } else {
-            this.renderBlock(block, this.cursorColumn, this.cursorRow);
+            this.renderBlock(block, column, row);
         }
     }
 
     private renderBlock (block: Block, column: number, row: number) {
-        this.assertIndexInRange(column, row);
+        this.assertInRange(column, row);
         
         const x = this.fontWidth * column;
         const y = this.fontHeight * row;
@@ -795,28 +577,64 @@ export class CanvasRenderer extends Renderer {
      * @param {number} row
      */
     private renderChar (column: number, row: number) {
-        this.assertIndexInRange(column, row);
+        this.assertInRange(column, row);
 
         this.renderBlock(
-            this.screen[row][column] || this.getDefaultBlock(),
+            this.getBlock(column, row) || this.getDefaultBlock(),
             column, row
         );
     }
 
-    /**
-     * Rerender everything
-     * Avoid calling this function directly
-     */
-    private renderAll () {
+    private renderSelection () {
+        const selection = this.getSelection();
+        const { columns } = this.getSize();
+
+        this.selectionLayerContext.clearRect(0, 0, this.selectionLayer.width, this.selectionLayer.height);
+
+        if (selection !== null) {
+            const { startColumn, startRow, endColumn, endRow } = selection;
+
+            assert(startRow <= endRow, `invalid start and end row ${startRow}, ${endRow}`);
+
+            this.selectionLayerContext.save();
+            this.selectionLayerContext.fillStyle = CanvasRenderer.DEFAULT_FILL_COLOR;
+
+            for (let row = startRow; row <= endRow; row++) {
+                if (row == startRow && row == endRow) {
+                    // draw a rectangle from start column to the end column
+                    const { offsetX, offsetY } = this.gridPositionToOffset(startColumn, row);
+                    this.selectionLayerContext.fillRect(offsetX, offsetY, (endColumn + 1 - startColumn) * this.fontWidth, this.fontHeight);
+                } else if (row == startRow) {
+                    // draw a rectangle from the start column to the end
+                    const { offsetX, offsetY } = this.gridPositionToOffset(startColumn, row);
+                    this.selectionLayerContext.fillRect(offsetX, offsetY, (columns - startColumn) * this.fontWidth, this.fontHeight);
+                } else if (row == endRow) {
+                    // draw a rectangle from the start to the end column
+                    const { offsetX, offsetY } = this.gridPositionToOffset(endColumn + 1, row);
+                    this.selectionLayerContext.fillRect(offsetX, offsetY, (0 - endColumn - 1) * this.fontWidth, this.fontHeight);
+                } else {
+                    // draw a rectangle across the entire line
+                    const { offsetX, offsetY } = this.gridPositionToOffset(0, row);
+                    this.selectionLayerContext.fillRect(offsetX, offsetY, columns * this.fontWidth, this.fontHeight);
+                }
+            }
+
+            this.selectionLayerContext.restore();
+        }
+    }
+
+    private renderText () {
+        const { columns, rows } = this.getSize();
+
         if (this.dirtyAll) {
-            for (let i = 0; i < this.columns; i++) {
-                for (let j = 0; j < this.rows; j++) {
+            for (let i = 0; i < columns; i++) {
+                for (let j = 0; j < rows; j++) {
                     this.renderChar(i, j);
                 }
             }
         } else {
-            for (let i = 0; i < this.columns; i++) {
-                for (let j = 0; j < this.rows; j++) {
+            for (let i = 0; i < columns; i++) {
+                for (let j = 0; j < rows; j++) {
                     if (this.dirtyMark[i + "," + j] === true) {
                         this.renderChar(i, j);
                     }
@@ -824,11 +642,19 @@ export class CanvasRenderer extends Renderer {
             }
         }
 
-        this.renderCursor();
-
         // clear all dirty marks
         this.dirtyMark = {};
         this.dirtyAll = false;
+    }
+
+    /**
+     * Rerender everything
+     * Avoid calling this function directly
+     */
+    private renderAll () {
+        this.renderText();
+        this.renderSelection();
+        this.renderCursor();
     }
 
     /**

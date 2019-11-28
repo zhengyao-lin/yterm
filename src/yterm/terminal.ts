@@ -1,11 +1,14 @@
 import { fullParser, ControlSequence, ControlSequenceParser } from "./control";
 import { Source } from "./source";
 import { Input } from "./input";
-import { Renderer, applySGRAttribute } from "./renderer";
+import { Renderer, Block, Color, SGRAttribute, TextStyle, Intensity, BlinkStatus, SGRColor } from "./renderer";
 import { assert } from "./utils";
 
 /**
  * Core class for a terminal
+ * All functionalities here are loosely related
+ * to renderer but would require more interaction with
+ * the source/input and other components
  */
 export class Terminal {
     /** 
@@ -22,9 +25,6 @@ export class Terminal {
     private savedCursorColumn: number;
     private savedCursorRow: number;
 
-    private scrollTopMargin: number;
-    private scrollBottomMargin: number;
-
     private title: string;
 
     private controlHandlers: Record<string, (seq: ControlSequence) => void>;
@@ -33,7 +33,7 @@ export class Terminal {
         this.source = source;
         this.renderer = renderer;
         this.input = input;
-        this.controlParser = fullParser;
+        this.controlParser = fullParser();
 
         this.controlParser.onChunk(chunk => {
             if (chunk instanceof ControlSequence) {
@@ -56,9 +56,6 @@ export class Terminal {
         this.savedCursorColumn = -1;
         this.savedCursorRow = -1;
 
-        this.scrollTopMargin = 0;
-        this.scrollBottomMargin = this.renderer.getGridSize().rows - 1;
-
         this.title = "";
 
         this.controlHandlers = {};
@@ -72,12 +69,13 @@ export class Terminal {
 
     newline () {
         const { row } = this.renderer.getCursor();
+        const { bottom } = this.renderer.getScrollMargins();
 
-        if (row + 1 <= this.scrollBottomMargin) {
-            this.renderer.setCursor(0, row + 1);
+        if (row == bottom) {
+            this.renderer.scroll(1);
+            this.renderer.setCursor(0, row);
         } else {
-            this.renderer.scroll(1, this.scrollTopMargin, this.scrollBottomMargin);
-            this.renderer.setCursor(0, this.scrollBottomMargin);
+            this.renderer.setCursor(0, row + 1);
         }
     }
 
@@ -85,20 +83,26 @@ export class Terminal {
     eraseInRow (row: number, from: number, to: number) {
         assert(from <= to, "illegal erasure");
 
+        const { columns } = this.renderer.getSize();
+
+        if (to >= columns) {
+            to = columns - 1;
+        }
+
         for (let i = from; i <= to; i++) {
-            this.renderer.printLetter(null, i, row);
+            this.renderer.setBlock(null, i, row);
         }
     }
 
     eraseInScreen (fromColumn: number, fromRow: number,
                    toColumn: number, toRow: number) {
-        const { columns, rows } = this.renderer.getGridSize();
+        const { columns, rows } = this.renderer.getSize();
 
         for (let row = fromRow; row < rows; row++) {
             for (let column = row == fromRow ? fromColumn : 0;
                  column < columns; column++) {
 
-                this.renderer.printLetter(null, column, row);
+                this.renderer.setBlock(null, column, row);
 
                 if (column == toColumn && row == toRow) {
                     return;
@@ -108,49 +112,33 @@ export class Terminal {
     }
 
     // delete a chunk of characters and move the following parts back
-    deleteInRow (row: number, from: number, to: number) {
-        const { columns } = this.renderer.getGridSize();
+    deleteInRow (row: number, from: number, n: number) {
+        const { columns } = this.renderer.getSize();
 
-        this.eraseInRow(row, from, to);
-
-        const remainingBlocks = [];
-
-        for (let i = to + 1; i < columns; i++) {
-            remainingBlocks.push(this.renderer.getBlock(i, row));
-            this.renderer.printLetter(null, i, row);
-        }
-
-        let column = from;
-
-        for (const block of remainingBlocks) {
-            this.renderer.setBlock(block, column, row);
-            column++;
+        for (let i = from; i < columns; i++) {
+            if (i < columns + n && this.renderer.isInRange(i + n, row)) {
+                this.renderer.setBlock(this.renderer.getBlock(i + n, row), i, row);
+            } else {
+                this.renderer.setBlock(null, i, row);
+            }
         }
     }
     
     insertInRow (row: number, from: number, n: number) {
-        const { columns } = this.renderer.getGridSize();
-        assert(from + n <= columns, "inserting too many characters");
-    
-        const savedBlock = [];
+        const { columns } = this.renderer.getSize();
 
-        // save blocks in [from, columns - n]
-        for (let i = from; i < columns - n; i++) {
-            savedBlock.push(this.renderer.getBlock(i, row));
-        }
-
-        for (let i = from; i < columns; i++) {
+        for (let i = columns - 1; i >= from; i--) {
             if (i < from + n) {
-                this.renderer.printLetter(null, i, row);
+                this.renderer.setBlock(null, i, row);
             } else {
-                this.renderer.setBlock(savedBlock[i - from - n], i, row);
+                this.renderer.setBlock(this.renderer.getBlock(i - n, row), i, row);
             }
         }
     }
 
     cursorMove (n: number, action: string) {
         const { column, row } = this.renderer.getCursor();
-        const { columns, rows } = this.renderer.getGridSize();
+        const { columns, rows } = this.renderer.getSize();
 
         switch (action) {
             // NOTE: A/B/C/D would NOT ignore out-of-bound requests
@@ -209,10 +197,11 @@ export class Terminal {
                 // ignoring n
 
                 const { column, row } = this.renderer.getCursor();
+                const { top } = this.renderer.getScrollMargins();
 
-                if (row == this.scrollTopMargin) {
+                if (row == top) {
                     // scroll up
-                    this.renderer.scroll(-1, this.scrollTopMargin, this.scrollBottomMargin);
+                    this.renderer.scroll(-1);
                 } else {
                     this.renderer.setCursor(column, row - 1);
                 }
@@ -243,6 +232,212 @@ export class Terminal {
                 }
             }
         }
+    }
+
+    static encodeRGB (r: number, g: number, b: number): string {
+        return `rgb(${r}, ${g}, ${b})`;
+    }
+    
+    static parse8bitColor (n: number): Color {
+        if (0 <= n && n <= 7) {
+            // return the represented color directly
+            return n as SGRColor;
+        }
+    
+        if (8 <= n && n <= 15) {
+            // TODO: support high intensity color
+            return (n - 8) as SGRColor;
+        }
+    
+        if (16 <= n && n <= 231) {
+            // 6 × 6 × 6 cube (216 colors)
+            // rgb is in base-6
+            const rgb = n - 16;
+            const r = Math.floor(255 / 5 * (rgb / 36));
+            const gb = rgb % 36;
+            const g = Math.floor(255 / 5 * gb / 6);
+            const b = 255 / 5 * (gb % 6);
+    
+            return Terminal.encodeRGB(r, g, b);
+        }
+    
+        if (232 <= n && n <= 255) {
+            const grey = Math.round(255 / 23 * (n - 232));
+            return Terminal.encodeRGB(grey, grey, grey);
+        }
+    
+        assert(false, "n not in range [0, 256)");
+        return "";
+    }
+
+    /**
+     * Applies a sequence of SGR attributes to a block
+     */
+    static applySGRAttribute (attrs: Array<SGRAttribute>, block: Block): Block {
+        let final = block.copy();
+
+        const attributeHandlerMap: Record<number, () => void> = {
+            [SGRAttribute.SGR_RESET]: () => final = new Block(),
+
+            // intensity settings
+            [SGRAttribute.SGR_HIGH_INTENSITY]:
+                () => final.intensity = Intensity.SGR_INTENSITY_HIGH,
+
+            [SGRAttribute.SGR_LOW_INTENSITY]:
+                () => final.intensity = Intensity.SGR_INTENSITY_LOW,
+
+            [SGRAttribute.SGR_NORMAL_INTENSITY]:
+                () => final.intensity = Intensity.SGR_INTENSITY_NORMAL,
+
+            // style settings
+            [SGRAttribute.SGR_ITALIC_STYLE]:
+                () => final.style = TextStyle.STYLE_ITALIC,
+
+            [SGRAttribute.SGR_NORMAL_STYLE]:
+                () => final.style = TextStyle.STYLE_NORMAL,
+
+            // blink settings
+            [SGRAttribute.SGR_SLOW_BLINK]:
+                () => final.blink = BlinkStatus.BLINK_SLOW,
+
+            [SGRAttribute.SGR_RAPID_BLINK]:
+                () => final.blink = BlinkStatus.BLINK_FAST,
+
+            [SGRAttribute.SGR_BLINK_OFF]:
+                () => final.blink = BlinkStatus.BLINK_NONE,
+
+            // reverse color (switch background & foreground)
+            [SGRAttribute.SGR_REVERSE]:
+                () => final.reversed = true,
+
+            [SGRAttribute.SGR_REVERSE_OFF]:
+                () => final.reversed = false,
+
+            // foreground colors
+            [SGRAttribute.SGR_FOREGROUND_BLACK]:
+                () => final.foreground = SGRColor.SGR_COLOR_BLACK,
+
+            [SGRAttribute.SGR_FOREGROUND_RED]:
+                () => final.foreground = SGRColor.SGR_COLOR_RED,
+
+            [SGRAttribute.SGR_FOREGROUND_GREEN]:
+                () => final.foreground = SGRColor.SGR_COLOR_GREEN,
+
+            [SGRAttribute.SGR_FOREGROUND_YELLOW]:
+                () => final.foreground = SGRColor.SGR_COLOR_YELLOW,
+
+            [SGRAttribute.SGR_FOREGROUND_BLUE]:
+                () => final.foreground = SGRColor.SGR_COLOR_BLUE,
+                
+            [SGRAttribute.SGR_FOREGROUND_MAGENTA]:
+                () => final.foreground = SGRColor.SGR_COLOR_MAGENTA,
+                    
+            [SGRAttribute.SGR_FOREGROUND_CYAN]:
+                () => final.foreground = SGRColor.SGR_COLOR_CYAN,
+                    
+            [SGRAttribute.SGR_FOREGROUND_WHITE]:
+                () => final.foreground = SGRColor.SGR_COLOR_WHITE,
+                
+            [SGRAttribute.SGR_FOREGROUND_DEFAULT]:
+                () => final.foreground = SGRColor.SGR_COLOR_DEFAULT,
+                
+            // background colors
+            [SGRAttribute.SGR_BACKGROUND_BLACK]:
+                () => final.background = SGRColor.SGR_COLOR_BLACK,
+                
+            [SGRAttribute.SGR_BACKGROUND_RED]:
+                () => final.background = SGRColor.SGR_COLOR_RED,
+                
+            [SGRAttribute.SGR_BACKGROUND_GREEN]:
+                () => final.background = SGRColor.SGR_COLOR_GREEN,
+                
+            [SGRAttribute.SGR_BACKGROUND_YELLOW]:
+                () => final.background = SGRColor.SGR_COLOR_YELLOW,
+                
+            [SGRAttribute.SGR_BACKGROUND_BLUE]:
+                () => final.background = SGRColor.SGR_COLOR_BLUE,
+                
+            [SGRAttribute.SGR_BACKGROUND_MAGENTA]:
+                () => final.background = SGRColor.SGR_COLOR_MAGENTA,
+                
+            [SGRAttribute.SGR_BACKGROUND_CYAN]:
+                () => final.background = SGRColor.SGR_COLOR_CYAN,
+                
+            [SGRAttribute.SGR_BACKGROUND_WHITE]:
+                () => final.background = SGRColor.SGR_COLOR_WHITE,
+                
+            [SGRAttribute.SGR_BACKGROUND_DEFAULT]:
+                () => final.background = SGRColor.SGR_COLOR_DEFAULT,
+        };
+
+        for (let i = 0; i < attrs.length; i++) {
+            const attr = attrs[i];
+
+            switch (attr) {
+                case SGRAttribute.SGR_FOREGROUND_CUSTOM:
+                case SGRAttribute.SGR_BACKGROUND_CUSTOM: {
+                    let color = null;
+
+                    if (i + 1 < attrs.length) {
+                        switch (attrs[i + 1]) {
+                            case 2: // 2;r;g;b
+                                if (i + 4 < attrs.length) {
+                                    const [ r, g, b ] = attrs.slice(i + 2, i + 5);
+
+                                    if (0 <= r && r < 256 &&
+                                        0 <= g && g < 256 &&
+                                        0 <= b && b < 256) {
+                                        color = Terminal.encodeRGB(r, g, b);
+                                        i += 4;
+                                    }
+                                }
+
+                                break;
+
+                            case 5: // 5;n https://en.wikipedia.org/wiki/ANSI_escape_code#8-bit
+                                if (i + 2 < attrs.length) {
+                                    const n = attrs[i + 2];
+                                    
+                                    if (0 <= n && n < 256) {
+                                        color = Terminal.parse8bitColor(n);
+                                        i += 2;
+
+                                        // console.log(`decoded 8-bit color: ${color}`);
+                                    }
+                                }
+
+                                break;
+                        }
+                    }
+
+                    if (color !== null) {
+                        // console.log(`decoded color: ${color}`);
+
+                        if (attr == SGRAttribute.SGR_FOREGROUND_CUSTOM) {
+                            final.foreground = color;
+                        } else {
+                            final.background = color;
+                        }
+
+                        break;
+                    }
+
+                    console.log("ill formatted custom color rendition command");
+                }
+
+                default: {
+                    const handler = attributeHandlerMap[attr];
+
+                    if (typeof handler == "function") {
+                        handler();
+                    } else {
+                        console.log(`SGR attribute ${attr} not implemented`);
+                    }
+                }
+            }
+        }
+
+        return final;
     }
 
     /**
@@ -297,10 +492,8 @@ export class Terminal {
         
         this.registerHandler("CONTROL_ERASE_IN_DISPLAY", seq => {
             const [ code ] = seq.args;
-            const { columns, rows } = this.renderer.getGridSize();
+            const { columns, rows } = this.renderer.getSize();
             const { column: cursorColumn, row: cursorRow } = this.renderer.getCursor();
-
-            console.log("erase in display " + code);
 
             if (code == 0) {
                 this.eraseInScreen(cursorColumn, cursorRow, columns - 1, rows - 1);
@@ -315,7 +508,7 @@ export class Terminal {
         this.registerHandler("CONTROL_ERASE_IN_LINE", seq => {
             const [ code ] = seq.args;
             const { column, row } = this.renderer.getCursor();
-            const { columns } = this.renderer.getGridSize();
+            const { columns } = this.renderer.getSize();
 
             if (code == 0) {
                 this.eraseInRow(row, column, columns - 1);
@@ -324,6 +517,12 @@ export class Terminal {
             } else if (code == 2) {
                 this.eraseInRow(row, 0, columns - 1);
             }
+        });
+
+        this.registerHandler("CONTROL_ERASE_CHAR", seq => {
+            const [ n ] = seq.args;
+            const { column, row } = this.renderer.getCursor();
+            this.eraseInRow(row, column, column + n - 1);
         });
 
         this.registerHandler("CONTROL_INSERT_CHAR", seq => {
@@ -335,23 +534,23 @@ export class Terminal {
         this.registerHandler("CONTROL_DELETE_CHAR", seq => {
             const [ n ] = seq.args;
             const { column, row } = this.renderer.getCursor();
-            this.deleteInRow(row, column, column + n - 1);
+            this.deleteInRow(row, column, n);
         });
 
         this.registerHandler("CONTROL_INSERT_LINE", seq => {
             const [ n ] = seq.args;
             const { row } = this.renderer.getCursor();
-            this.renderer.scroll(-n, row, this.scrollBottomMargin);
+            this.renderer.scroll(-n, row);
         });
 
         this.registerHandler("CONTROL_DELETE_LINE", seq => {
             const [ n ] = seq.args;
             const { row } = this.renderer.getCursor();
-            this.renderer.scroll(n, row, this.scrollBottomMargin);
+            this.renderer.scroll(n, row);
         });
 
         this.registerHandler("CONTROL_GRAPHIC_RENDITION", seq => {
-            const newDefault = applySGRAttribute(seq.args, this.renderer.getDefaultBlock());
+            const newDefault = Terminal.applySGRAttribute(seq.args, this.renderer.getDefaultBlock());
             this.renderer.setDefaultBlock(newDefault);
         });
 
@@ -417,7 +616,7 @@ export class Terminal {
                 case 8:
                     // resize window
                     if (a > 0 && b > 0) {
-                        this.renderer.setGridSize(b, a);
+                        this.renderer.setSize(b, a);
                     }
 
                 default:
@@ -427,7 +626,7 @@ export class Terminal {
 
         this.registerHandler("CONTROL_SET_TOP_BOTTOM_MARGIN", seq => {
             let [ top, bottom ] = seq.args;
-            const { rows } = this.renderer.getGridSize();
+            const { rows } = this.renderer.getSize();
 
             // console.log(`CONTROL_SET_TOP_BOTTOM_MARGIN ${top};${bottom}`);
 
@@ -445,8 +644,7 @@ export class Terminal {
                 top -= 1;
                 bottom -= 1;
 
-                this.scrollTopMargin = top;
-                this.scrollBottomMargin = bottom;
+                this.renderer.setScrollMargins(top, bottom);
             } else {
                 console.log(`illegal CONTROL_SET_TOP_BOTTOM_MARGIN arguments ${top};${bottom}`);
             }

@@ -65,8 +65,6 @@ export class TextMetrics {
 
         const pixels = this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height).data;
 
-        console.log(pixels);
-
         let minX = this.canvas.width, maxX = 0;
         let minY = this.canvas.height, maxY = 0;
 
@@ -80,12 +78,6 @@ export class TextMetrics {
                 if (y > maxY) maxY = y;
             }
         }
-
-        console.log({
-            text: text,
-            width: maxX - minX,
-            height: maxY - minY
-        });
 
         return {
             width: maxX - minX,
