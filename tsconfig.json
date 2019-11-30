@@ -4,8 +4,9 @@
     "strict": true,
     "esModuleInterop": true,
     "downlevelIteration": true,
+    "declaration": true,
     "target": "es5",
-    "outDir": "dist/yterm"
+    "outDir": "dist"
   },
   "include": [
     "src/**/*"

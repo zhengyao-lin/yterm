@@ -26,6 +26,11 @@ server.on("connection", ws => {
     });
 });
 
+server.on("listening", () => {
+    console.log("listening on", server.address());
+    console.log("open demo.html to view the frontend");
+});
+
 process.on("exit", () => {
     console.log("killing all processes");
 
