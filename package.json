@@ -2,12 +2,14 @@
   "name": "yterm",
   "version": "0.0.1",
   "description": "",
+  "main": "dist/yterm.ts",
+  "types": "dist/yterm.d.ts",
   "scripts": {
     "build": "npx webpack --mode production",
     "build-dev": "npx webpack --mode development",
     "test": "npx tsc --noEmit && npx mocha -r ts-node/register tests/**/*.test.ts",
     "coverage": "npx nyc -r text -r lcov -n src -e .ts npm run test",
-    "demo": "npx ts-node demo/server.ts"
+    "demo": "cd demo && make -C"
   },
   "author": "zl38",
   "license": "MIT",
@@ -25,8 +27,5 @@
     "webpack": "^4.41.2",
     "webpack-cli": "^3.3.10"
   },
-  "dependencies": {
-    "node-pty": "^0.9.0",
-    "ws": "^7.2.0"
-  }
+  "dependencies": {}
 }
