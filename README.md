@@ -12,7 +12,7 @@ npm run build # build yterm module
 # Demo usage
 
 ```
-npm run demo # start demo server
+npm run demo simple # start demo server
 # open demo/demo.html now and you should be able to see a terminal screen
 ```
 
